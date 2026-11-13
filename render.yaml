@@ -1,5 +1,13 @@
-# Publica Pick&Go en Render (https://render.com) con un clic desde este repositorio.
-# El plan gratuito no guarda datos entre reinicios: vuelve a los datos de demostración.
+# Publica Pick&Go en Render (https://render.com) desde este repositorio.
+#
+# Tal como está, usa el plan gratuito y arranca con datos de DEMOSTRACIÓN, que se pierden cada vez
+# que el servicio se duerme. Sirve para mostrar la app, no para operar.
+#
+# Para operar de verdad (que las cuentas y los pedidos se conserven):
+#   1. Cambia `plan: free` por `plan: starter` y quita el `#` de las líneas del bloque `disk`.
+#   2. Quita el `#` de las variables PICKGO_DB y PICKGO_DEMO.
+#   3. En el panel de Render define PICKGO_OWNER_EMAIL y PICKGO_OWNER_PASSWORD (tu cuenta de plataforma)
+#      y PICKGO_VAPID_SUBJECT (por ejemplo mailto:tu-correo@dominio.cl). No las escribas en este archivo.
 services:
   - type: web
     name: pick-go
@@ -8,8 +16,20 @@ services:
     buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /healthz
+    # disk:
+    #   name: datos
+    #   mountPath: /var/data
+    #   sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: 22
       - key: TRUST_PROXY
         value: 1
+      # - key: PICKGO_DB
+      #   value: /var/data/pickgo.db
+      # - key: PICKGO_DEMO
+      #   value: 0
+      - key: PICKGO_OWNER_EMAIL
+        sync: false
+      - key: PICKGO_OWNER_PASSWORD
+        sync: false

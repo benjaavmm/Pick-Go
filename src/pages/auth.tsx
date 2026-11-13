@@ -184,6 +184,10 @@ export function Login() {
               <Building2 size={22} aria-hidden />
               Institución
             </button>
+            <button onClick={() => quick('plataforma@pickgo.cl')}>
+              <ShieldCheck size={22} aria-hidden />
+              Plataforma
+            </button>
           </div>
           {demoError && <p className="error">{demoError}</p>}
         </section>
@@ -370,9 +374,9 @@ const FAQ: [string, string][] = [
   ['¿Con cuánta anticipación tengo que pedir?', 'Cada local define cuánto necesita para preparar. La app solo te muestra las horas que todavía alcanzan, partiendo por la más cercana. También puedes dejar pedido para mañana.'],
   ['¿Por qué una hora aparece como "Lleno"?', 'Cada local acepta una cantidad limitada de pedidos cada 10 minutos, para poder tenerlos todos a tiempo. Si una hora se llenó, elige la siguiente.'],
   ['¿Cómo retiro mi pedido?', 'Abre el pedido en la app y muestra el código QR o el código de seis caracteres. El local lo escanea o lo escribe y te entrega tu pedido.'],
-  ['¿Puedo cancelar?', 'Sí, mientras el local no haya empezado a prepararlo. Después de eso ya no se puede cancelar desde la app.'],
-  ['¿Qué pasa si no retiro un pedido?', 'El local lo marca como no retirado. Si acumulas dos en 30 días, el pago en efectivo se desactiva por un tiempo y tendrás que pagar al momento de pedir.'],
-  ['¿Cómo pago?', 'Puedes elegir tarjeta, tarjeta JUNAEB o efectivo al retirar. En esta versión de demostración los pagos con tarjeta son simulados: no se hace ningún cobro real.'],
+  ['¿Puedo cancelar?', 'Sí, mientras el local no haya aceptado el pedido. Después de eso ya no se puede cancelar desde la app.'],
+  ['¿Qué pasa si no retiro un pedido?', 'El local lo preparó para ti, así que lo marca como no retirado. Si acumulas tres en 30 días, tu cuenta no puede hacer pedidos nuevos hasta que alguno salga de ese período.'],
+  ['¿Cómo pago?', 'Por ahora pides en la app y pagas en el local al retirar, con el medio de pago que acepte ese local. La app no hace ningún cobro.'],
   ['No me llegan los avisos', 'Actívalos en tu perfil. En iPhone primero debes agregar Pick&Go a tu pantalla de inicio y abrirla desde ahí. Con la app abierta, los avisos llegan siempre.'],
   ['¿Cómo instalo la app?', 'En Android, abre el menú del navegador y elige "Instalar app" o "Agregar a pantalla de inicio". En iPhone, toca Compartir y luego "Agregar a inicio".'],
 ];
@@ -403,11 +407,11 @@ export function Privacy({ back = '/' }: { back?: string }) {
         </h2>
         <ul>
           <li>Tu nombre, tu correo y la sede que elegiste.</li>
-          <li>Tus pedidos: qué pediste, en qué local, a qué hora y cómo pagaste.</li>
+          <li>Tus pedidos: qué pediste, en qué local y a qué hora.</li>
           <li>Las calificaciones y comentarios que dejas a los locales.</li>
           <li>Si activas los avisos, el identificador que tu navegador entrega para enviarte notificaciones.</li>
         </ul>
-        <p>No guardamos datos de tarjetas ni tu ubicación.</p>
+        <p>No guardamos datos de pago ni tu ubicación: se paga directamente en el local.</p>
       </section>
       <section className="card">
         <h2>Para qué los usamos</h2>

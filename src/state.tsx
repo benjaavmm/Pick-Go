@@ -3,7 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { api, ApiError, STATUS_LABEL, type Order, type Product, type Shop, type User } from './lib';
 
 export interface CartLine {
+  /** Identifica la línea: el producto más las opciones elegidas. */
+  key: string;
   productId: number;
+  choices: string[];
+  /** Resumen de las opciones elegidas, para mostrar. */
+  detail: string;
+  image: string | null;
   name: string;
   emoji: string;
   price: number;
@@ -36,6 +42,17 @@ const THEME_KEY = 'pickgo.theme';
 /** La pantalla de carga se muestra al menos este tiempo, para que la animación se vea completa. */
 const SPLASH_MS = 2000;
 
+// Se calcula una sola vez por carga de página: true solo la primera vez que se abre la app en esta sesión.
+const SHOW_INTRO = (() => {
+  try {
+    if (sessionStorage.getItem('pickgo.intro')) return false;
+    sessionStorage.setItem('pickgo.intro', '1');
+  } catch {
+    /* almacenamiento no disponible */
+  }
+  return true;
+})();
+
 function storedTheme(): Theme {
   try {
     const t = localStorage.getItem(THEME_KEY);
@@ -60,6 +77,8 @@ interface InstallEvent extends Event {
 interface AppState {
   user: User | null;
   loading: boolean;
+  /** La carga actual es la de apertura de la app y lleva la animación de la bolsa. */
+  intro: boolean;
   /** No se pudo contactar al servidor al abrir la app. */
   offline: boolean;
   retry: () => void;
@@ -74,8 +93,8 @@ interface AppState {
   cartCount: number;
   cartTotal: number;
   /** Devuelve false si el carrito tiene productos de otro local y la persona no quiso reemplazarlo. */
-  addToCart: (shop: Pick<Shop, 'id' | 'name'>, product: Product) => boolean;
-  setQty: (productId: number, qty: number) => void;
+  addToCart: (shop: Pick<Shop, 'id' | 'name'>, product: Product, choices?: string[]) => boolean;
+  setQty: (key: string, qty: number) => void;
   replaceCart: (cart: Cart) => void;
   clearCart: () => void;
   toast: (text: string, kind?: Toast['kind']) => void;
@@ -108,7 +127,7 @@ function loadCart(): Cart {
     const raw = localStorage.getItem(CART_KEY);
     if (raw) {
       const c = JSON.parse(raw) as Cart;
-      if (Array.isArray(c.lines)) return c;
+      if (Array.isArray(c.lines) && c.lines.every((l) => typeof l.key === 'string')) return c;
     }
   } catch {
     /* almacenamiento no disponible */
@@ -177,6 +196,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState(navigator.onLine);
   const [theme, setThemeState] = useState<Theme>(storedTheme);
   const first = useRef(true);
+  const [intro, setIntro] = useState(SHOW_INTRO);
   const [config, setConfig] = useState<{ demo: boolean; push_key: string | null }>({ demo: false, push_key: null });
   const [cart, setCart] = useState<Cart>(loadCart);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -192,7 +212,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadMe = useCallback(() => {
     setBoot('loading');
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const minimum = new Promise((r) => setTimeout(r, first.current && !reduced ? SPLASH_MS : 0));
+    // La animación de la bolsa se ve una sola vez, al abrir la app; después, las cargas son un simple "Cargando".
+    const intro = first.current && SHOW_INTRO;
+    setIntro(intro);
+    const minimum = new Promise((r) => setTimeout(r, intro && !reduced ? SPLASH_MS : 0));
     first.current = false;
     void api<User>('/me')
       .then((u): 'ready' => {
@@ -266,7 +289,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const userId = user?.id;
   const role = user?.role;
   useEffect(() => {
-    if (!userId || role === 'admin') return;
+    if (!userId || (role !== 'student' && role !== 'shop')) return;
     const es = new EventSource('/api/events');
     es.addEventListener('order', (ev) => {
       const detail = JSON.parse((ev as MessageEvent<string>).data) as OrderEvent;
@@ -282,7 +305,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ? `Tu pedido ${o.code} está listo. Pasa a retirarlo.`
             : o.status === 'cancelado'
               ? `${o.shop_name} canceló tu pedido ${o.code}.`
-              : `Pedido ${o.code}: ${STATUS_LABEL[o.status].toLowerCase()}.`;
+              : o.status === 'preparando'
+                ? `${o.shop_name} aceptó tu pedido ${o.code} y lo está preparando.`
+                : `Pedido ${o.code}: ${STATUS_LABEL[o.status].toLowerCase()}.`;
         toast(text, o.status === 'cancelado' || o.status === 'no_retirado' ? 'error' : 'ok');
         if (o.status === 'listo') {
           beep();
@@ -353,6 +378,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return {
       user,
       loading: boot === 'loading',
+      intro,
       offline: boot === 'offline',
       retry: loadMe,
       online,
@@ -381,27 +407,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
       cart,
       cartCount,
       cartTotal,
-      addToCart: (shop, product) => {
+      addToCart: (shop, product, choices = []) => {
         const other = cart.shopId !== null && cart.shopId !== shop.id && cart.lines.length > 0;
         if (other && !window.confirm(`Tu carrito tiene productos de ${cart.shopName}. ¿Vaciarlo y pedir en ${shop.name}?`))
           return false;
         setCart((c) => {
           const base = c.shopId !== shop.id ? { shopId: shop.id, shopName: shop.name, lines: [] } : c;
-          const found = base.lines.find((l) => l.productId === product.id);
+          const picked = product.options.flatMap((g) => g.choices.filter((ch) => choices.includes(ch.id)));
+          const key = `${product.id}:${picked.map((ch) => ch.id).sort().join(',')}`;
+          const found = base.lines.find((l) => l.key === key);
           const lines = found
-            ? base.lines.map((l) => (l.productId === product.id ? { ...l, qty: Math.min(20, l.qty + 1) } : l))
+            ? base.lines.map((l) => (l.key === key ? { ...l, qty: Math.min(20, l.qty + 1) } : l))
             : [
                 ...base.lines,
-                { productId: product.id, name: product.name, emoji: product.emoji, price: product.price, qty: 1 },
+                {
+                  key,
+                  productId: product.id,
+                  choices: picked.map((ch) => ch.id),
+                  detail: picked.map((ch) => ch.name).join(', '),
+                  image: product.image,
+                  name: product.name,
+                  emoji: product.emoji,
+                  price: product.price + picked.reduce((n, ch) => n + ch.price, 0),
+                  qty: 1,
+                },
               ];
           return { ...base, lines };
         });
         return true;
       },
-      setQty: (productId, qty) =>
+      setQty: (key, qty) =>
         setCart((c) => {
           const lines = c.lines
-            .map((l) => (l.productId === productId ? { ...l, qty: Math.min(20, qty) } : l))
+            .map((l) => (l.key === key ? { ...l, qty: Math.min(20, qty) } : l))
             .filter((l) => l.qty > 0);
           return lines.length ? { ...c, lines } : EMPTY_CART;
         }),
@@ -416,7 +454,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setInstallEvent(null);
       },
     };
-  }, [user, boot, loadMe, online, theme, config.demo, cart, toast, push, enablePush, installEvent]);
+  }, [user, boot, intro, loadMe, online, theme, config.demo, cart, toast, push, enablePush, installEvent]);
 
   return (
     <Ctx.Provider value={value}>

@@ -1,4 +1,5 @@
 import {
+  Camera,
   ChartColumn,
   ClipboardList,
   Hourglass,
@@ -22,10 +23,11 @@ import {
   minutesUntil,
   money,
   moneyShort,
-  PAYMENT_LABEL,
+  optionsText,
   shortDay,
   slotLabel,
   toMinutes,
+  type OptionGroup,
   type Order,
   type Product,
   type Shop,
@@ -34,7 +36,7 @@ import {
   type User,
 } from '../lib';
 import { useApp, useLoad, useOrderEvents, useTick } from '../state';
-import { BarChart, Empty, Kpi, Loading, Logo, Sheet } from '../ui';
+import { BarChart, Empty, Kpi, Loading, Logo, ProductTile, Sheet } from '../ui';
 import { AccountSettings } from './account';
 
 export function ShopLayout() {
@@ -173,7 +175,7 @@ function Scanner({ onCode, onClose }: { onCode: (code: string) => void; onClose:
 
 // ---------- Pedidos en vivo ----------
 const NEXT: Partial<Record<Status, { to: Status; label: string }>> = {
-  recibido: { to: 'preparando', label: 'Empezar a preparar' },
+  recibido: { to: 'preparando', label: 'Aceptar y preparar' },
   preparando: { to: 'listo', label: 'Listo: avisar' },
   listo: { to: 'entregado', label: 'Entregar' },
 };
@@ -200,16 +202,17 @@ function OrderCard({ o, onMove }: { o: Order; onMove: (o: Order, to: Status) => 
       <p className="customer">{o.customer_name}</p>
       <ul className="lines">
         {o.items.map((i) => (
-          <li key={i.product_id}>
+          <li key={i.id}>
             <span>
               <b>{i.qty}×</b> {i.name}
+              {i.options.length > 0 && <small className="item-options">{optionsText(i.options)}</small>}
             </span>
           </li>
         ))}
       </ul>
       {o.note && <p className="note">{o.note}</p>}
       <p className={o.paid ? 'paid' : 'collect'}>
-        {o.paid ? `Pagado · ${PAYMENT_LABEL[o.payment_method]}` : `Cobrar ${money(o.total)} en efectivo`}
+        {o.paid ? 'Pagado' : `Cobrar ${money(o.total)} al entregar`}
       </p>
       <div className="ticket-actions">
         {next && (
@@ -227,9 +230,12 @@ function OrderCard({ o, onMove }: { o: Order; onMove: (o: Order, to: Status) => 
         ) : (
           <button
             className="btn btn-ghost"
-            onClick={() => window.confirm(`¿Cancelar el pedido ${o.code} de ${o.customer_name}?`) && onMove(o, 'cancelado')}
+            onClick={() =>
+              window.confirm(`¿${o.status === 'recibido' ? 'Rechazar' : 'Cancelar'} el pedido ${o.code} de ${o.customer_name}? Le avisaremos.`) &&
+              onMove(o, 'cancelado')
+            }
           >
-            Cancelar
+            {o.status === 'recibido' ? 'Rechazar' : 'Cancelar'}
           </button>
         )}
       </div>
@@ -278,7 +284,7 @@ export function ShopOrders() {
   const delivered = by('entregado');
   const sales = delivered.reduce((n, o) => n + o.total, 0);
   const columns: { status: Status; title: string; empty: string }[] = [
-    { status: 'recibido', title: 'Nuevos', empty: 'Sin pedidos nuevos' },
+    { status: 'recibido', title: 'Por aceptar', empty: 'Sin pedidos nuevos' },
     { status: 'preparando', title: 'En preparación', empty: 'Nada en preparación' },
     { status: 'listo', title: 'Listos para retirar', empty: 'Nada esperando retiro' },
   ];
@@ -446,12 +452,139 @@ export function ShopStatsPage() {
 }
 
 // ---------- Menú ----------
-const BLANK = { category: '', name: '', description: '', price: '', emoji: '🍽️' };
+interface ProductForm {
+  id?: number;
+  category: string;
+  name: string;
+  description: string;
+  price: string;
+  emoji: string;
+  image: string | null;
+  imageId: number | null;
+  options: OptionGroup[];
+}
+const BLANK: ProductForm = { category: '', name: '', description: '', price: '', emoji: '', image: null, imageId: null, options: [] };
+
+/** Reduce la foto en el propio dispositivo antes de subirla: carga rápida con datos móviles y menos espacio. */
+async function uploadPhoto(file: File): Promise<{ id: number; url: string }> {
+  const src = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('No pudimos leer esa imagen. Prueba con una foto JPG o PNG.'));
+      el.src = src;
+    });
+    const scale = Math.min(1, 900 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.82));
+    if (!blob) throw new Error('No pudimos procesar esa imagen.');
+    const res = await fetch('/api/shop/images', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error ?? 'No pudimos subir la foto.');
+    return data;
+  } finally {
+    URL.revokeObjectURL(src);
+  }
+}
+
+function OptionsEditor({ value, onChange }: { value: OptionGroup[]; onChange: (v: OptionGroup[]) => void }) {
+  const setGroup = (i: number, g: Partial<OptionGroup>) => onChange(value.map((x, k) => (k === i ? { ...x, ...g } : x)));
+  return (
+    <div className="stack">
+      {value.map((g, i) => (
+        <div key={i} className="editor-group">
+          <div className="editor-row">
+            <input
+              value={g.name}
+              onChange={(e) => setGroup(i, { name: e.target.value })}
+              placeholder="Nombre del grupo. Ej.: Tamaño"
+              aria-label="Nombre del grupo de opciones"
+              maxLength={30}
+              required
+            />
+            <button type="button" className="icon-btn danger" aria-label="Quitar grupo" onClick={() => onChange(value.filter((_, k) => k !== i))}>
+              <Trash2 size={18} />
+            </button>
+          </div>
+          <div className="checks">
+            <label className="check">
+              <input type="checkbox" checked={g.required} onChange={(e) => setGroup(i, { required: e.target.checked })} />
+              Es obligatorio elegir
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={g.multiple} onChange={(e) => setGroup(i, { multiple: e.target.checked })} />
+              Se pueden elegir varias
+            </label>
+          </div>
+          {g.choices.map((c, j) => (
+            <div key={j} className="editor-row">
+              <input
+                value={c.name}
+                onChange={(e) => setGroup(i, { choices: g.choices.map((x, k) => (k === j ? { ...x, name: e.target.value } : x)) })}
+                placeholder="Alternativa. Ej.: Grande"
+                aria-label="Nombre de la alternativa"
+                maxLength={40}
+                required
+              />
+              <input
+                className="w-price"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                value={c.price === 0 ? '' : c.price}
+                onChange={(e) =>
+                  setGroup(i, { choices: g.choices.map((x, k) => (k === j ? { ...x, price: Math.max(0, Math.round(Number(e.target.value) || 0)) } : x)) })
+                }
+                placeholder="+ $0"
+                aria-label="Precio adicional"
+              />
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Quitar alternativa"
+                disabled={g.choices.length <= 1}
+                onClick={() => setGroup(i, { choices: g.choices.filter((_, k) => k !== j) })}
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="btn btn-soft btn-sm"
+            disabled={g.choices.length >= 15}
+            onClick={() => setGroup(i, { choices: [...g.choices, { id: '', name: '', price: 0 }] })}
+          >
+            <Plus size={18} aria-hidden /> Agregar alternativa
+          </button>
+        </div>
+      ))}
+      {value.length < 8 && (
+        <button
+          type="button"
+          className="btn btn-soft"
+          onClick={() => onChange([...value, { id: '', name: '', required: false, multiple: false, choices: [{ id: '', name: '', price: 0 }] }])}
+        >
+          <Plus size={18} aria-hidden /> Agregar grupo de opciones
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function ShopMenu() {
   const { user, toast } = useApp();
   const { data, reload } = useLoad(() => api<{ products: Product[] }>(`/shops/${user!.shop_id}`), []);
-  const [form, setForm] = useState<(typeof BLANK & { id?: number }) | null>(null);
+  const [form, setForm] = useState<ProductForm | null>(null);
+  const [uploading, setUploading] = useState(false);
   const products = data?.products ?? [];
   const categories = [...new Set(products.map((p) => p.category))];
 
@@ -466,11 +599,31 @@ export function ShopMenu() {
   const save = (e: FormEvent) => {
     e.preventDefault();
     if (!form) return;
-    const body = { ...form, price: Number(form.price) };
+    const body = {
+      category: form.category,
+      name: form.name,
+      description: form.description,
+      price: Number(form.price),
+      emoji: form.emoji,
+      imageId: form.imageId,
+      options: form.options,
+    };
     void run(async () => {
       await (form.id ? api(`/shop/products/${form.id}`, 'PATCH', body) : api('/shop/products', 'POST', body));
       setForm(null);
     });
+  };
+
+  const pickPhoto = async (file: File | undefined) => {
+    if (!file || !form) return;
+    setUploading(true);
+    try {
+      const up = await uploadPhoto(file);
+      setForm((f) => (f ? { ...f, image: up.url, imageId: up.id } : f));
+    } catch (e) {
+      toast(errorText(e), 'error');
+    }
+    setUploading(false);
   };
 
   return (
@@ -493,13 +646,12 @@ export function ShopMenu() {
               .filter((p) => p.category === c)
               .map((p) => (
                 <li key={p.id} className={`card product ${p.available ? '' : 'soldout'}`}>
-                  <span className="tile" aria-hidden>
-                    {p.emoji}
-                  </span>
+                  <ProductTile image={p.image} emoji={p.emoji} />
                   <div className="grow">
                     <strong>{p.name}</strong>
                     {p.description && <span className="muted clamp">{p.description}</span>}
                     <span className="price">{money(p.price)}</span>
+                    {p.options.length > 0 && <span className="muted">Opciones: {p.options.map((g) => g.name).join(', ')}</span>}
                   </div>
                   <div className="product-admin">
                     <label className="switch">
@@ -517,7 +669,17 @@ export function ShopMenu() {
                         className="icon-btn"
                         aria-label={`Editar ${p.name}`}
                         onClick={() =>
-                          setForm({ id: p.id, category: p.category, name: p.name, description: p.description, price: String(p.price), emoji: p.emoji })
+                          setForm({
+                            id: p.id,
+                            category: p.category,
+                            name: p.name,
+                            description: p.description,
+                            price: String(p.price),
+                            emoji: p.emoji,
+                            image: p.image,
+                            imageId: p.image ? Number(p.image.split('/').pop()) : null,
+                            options: p.options,
+                          })
                         }
                       >
                         <Pencil size={18} />
@@ -542,10 +704,27 @@ export function ShopMenu() {
       {form && (
         <Sheet title={form.id ? 'Editar producto' : 'Nuevo producto'} onClose={() => setForm(null)}>
           <form className="form" onSubmit={save}>
+            <div className="photo-field">
+              <ProductTile image={form.image} emoji={form.emoji} large />
+              <div className="grow stack">
+                <span className="muted small">La foto y el ícono son opcionales. Si no pones ninguno, se muestra un ícono genérico.</span>
+                <div className="photo-actions">
+                  <label className="btn btn-soft btn-sm">
+                    <Camera size={18} aria-hidden /> {uploading ? 'Subiendo…' : form.image ? 'Cambiar foto' : 'Subir foto'}
+                    <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(e) => void pickPhoto(e.target.files?.[0])} />
+                  </label>
+                  {form.image && (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setForm({ ...form, image: null, imageId: null })}>
+                      Quitar foto
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="form-row">
               <label className="w-emoji">
                 Ícono
-                <input value={form.emoji} onChange={(e) => setForm({ ...form, emoji: e.target.value })} maxLength={8} required />
+                <input value={form.emoji} onChange={(e) => setForm({ ...form, emoji: e.target.value })} maxLength={8} placeholder="—" />
               </label>
               <label className="grow">
                 Nombre
@@ -588,7 +767,14 @@ export function ShopMenu() {
               </span>
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} maxLength={120} />
             </label>
-            <button className="btn btn-primary btn-block">Guardar producto</button>
+            <div className="stack">
+              <strong>Opciones</strong>
+              <span className="muted small">Tamaños, agregados o variantes que el estudiante elige al pedir. Cada alternativa puede sumar un valor al precio.</span>
+              <OptionsEditor value={form.options} onChange={(options) => setForm({ ...form, options })} />
+            </div>
+            <button className="btn btn-primary btn-block" disabled={uploading}>
+              Guardar producto
+            </button>
           </form>
         </Sheet>
       )}

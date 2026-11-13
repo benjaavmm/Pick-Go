@@ -20,7 +20,8 @@ Así no pierdes en la fila los 10 minutos que tienes para comer.
 - Locales ordenados por la hora más cercana en que se puede retirar, con buscador de productos.
 - Hora de retiro en franjas de 10 minutos, para hoy o mañana. Cada franja tiene cupo, así la demanda del horario
   peak se reparte.
-- Pago con tarjeta, tarjeta JUNAEB o efectivo al retirar (ver [Limitaciones](#limitaciones)).
+- Productos con foto y opciones (tamaños, agregados), con el precio calculado al elegir.
+- Se pide en la app y se paga en el local al retirar; la app todavía no cobra.
 - Seguimiento en vivo y aviso cuando el pedido está listo, también con la app cerrada.
 - Código de retiro con QR, historial, «pedir lo de siempre» y calificación del local.
 - Perfil con cambio de sede, apariencia clara u oscura, ayuda, descarga de datos y eliminación de cuenta.
@@ -30,15 +31,22 @@ Así no pierdes en la fila los 10 minutos que tienes para comer.
 - Tablero en vivo con los pedidos ordenados por hora de retiro y aviso sonoro al entrar uno nuevo.
 - Un botón por paso: empezar a preparar, avisar que está listo y entregar. Se entrega escaneando el QR con la cámara
   o escribiendo el código.
-- Menú editable, horarios, cupo por franja, anticipación mínima y pausa de pedidos.
+- Cada pedido nuevo se acepta o se rechaza; el estudiante se entera al instante.
+- Menú editable con foto, ícono y opciones por producto (todos opcionales), horarios, cupo por franja,
+  anticipación mínima y pausa de pedidos.
 - Métricas: ventas, puntualidad, calificación, demanda por hora, productos más pedidos y opiniones.
-- Si un pedido no se retira, se marca; con dos en 30 días, ese estudiante debe pagar al pedir.
+- Si un pedido no se retira, se marca; con tres en 30 días, esa cuenta no puede hacer pedidos nuevos.
 
 **Instituciones**
 
 - Resumen con pedidos, puntualidad, ventas y satisfacción, por sede y por período, exportable a CSV.
 - Aprobación de locales: un local nuevo no aparece para los estudiantes hasta que la institución lo aprueba.
 - Creación de sedes.
+
+**Plataforma** (quien opera Pick&Go)
+
+- Crea instituciones con su primera sede y su cuenta de administración.
+- Recupera el acceso de quien olvidó su contraseña, con una clave temporal.
 
 ## Cómo correrlo
 
@@ -64,6 +72,7 @@ La pantalla de ingreso tiene botones para entrar con las cuentas de prueba. Toda
 | Local (Pepepug) | `pepepug@pickgo.cl` |
 | Local (Casino) | `casino@pickgo.cl` |
 | Institución (Duoc UC) | `admin@pickgo.cl` |
+| Plataforma | `plataforma@pickgo.cl` |
 
 Para ver los avisos en vivo, abre el estudiante y el local en ventanas distintas (una de incógnito).
 
@@ -78,7 +87,7 @@ y con HTTPS o en `localhost`.
 | `npm test` | Pruebas del servidor |
 | `npm run build` | Revisa tipos y compila la app web en `dist/` |
 | `npm start` | Sirve la API y la app compilada en un solo puerto (3001) |
-| `npm run crear-admin -- "Institución" correo@institucion.cl` | Crea una institución y su cuenta de administración |
+| `npm run crear-admin -- "Institución" correo@institucion.cl` | Crea una institución y su administración desde la terminal |
 
 ### Variables de entorno
 
@@ -87,15 +96,29 @@ y con HTTPS o en `localhost`.
 | `PORT` | `3001` | Puerto del servidor |
 | `PICKGO_DB` | `data/pickgo.db` | Archivo de la base de datos SQLite |
 | `PICKGO_DEMO` | activado | Con `0` arranca sin datos ni cuentas de demostración |
+| `PICKGO_OWNER_EMAIL` y `PICKGO_OWNER_PASSWORD` | sin definir | Crean la cuenta de plataforma al arrancar, si no existe |
 | `TRUST_PROXY` | sin definir | Defínela si el servidor queda detrás de un proxy con HTTPS |
 | `PICKGO_VAPID_SUBJECT` | `mailto:soporte@example.com` | Contacto del operador que exigen los servicios de push; usa uno real en producción |
 
+## Operar con instituciones reales
+
+1. Arranca con `PICKGO_DEMO=0` y define `PICKGO_OWNER_EMAIL` y `PICKGO_OWNER_PASSWORD`. La base parte vacía, con
+   solo tu cuenta de plataforma.
+2. Entra con esa cuenta y crea la institución: la app te muestra una vez el correo y la contraseña temporal de su
+   administración.
+3. La administración entra, cambia su contraseña y crea las sedes que falten.
+4. Cada local se registra solo desde «Súmalo a Pick&Go» y la administración lo aprueba.
+5. Los estudiantes se registran solos eligiendo su sede.
+
+La base de datos es un archivo SQLite (`PICKGO_DB`). Cada día se guarda una copia en la carpeta `respaldos`, junto
+a la base, y se conservan las últimas siete. Guarda ese archivo en un disco que no se borre.
+
 ## Publicarla
 
-El archivo `render.yaml` permite publicarla en [Render](https://render.com): crea un Web Service desde este
-repositorio y Render toma los comandos y variables de ahí. En el plan gratuito el servicio se duerme tras 15 minutos
-sin uso y los datos se reinician al despertar; para conservar datos hace falta un plan con disco persistente y
-apuntar `PICKGO_DB` a ese disco.
+El archivo `render.yaml` permite publicarla en [Render](https://render.com). Tal como viene usa el plan gratuito con
+datos de demostración, que **se pierden cada vez que el servicio se duerme**: sirve para mostrar la app, no para
+operar. Para conservar cuentas y pedidos hace falta un plan con disco persistente; el mismo archivo explica qué
+líneas activar.
 
 ## Cómo está hecho
 
@@ -119,15 +142,15 @@ cupos al crear cada pedido, así que no depende de lo que mande el navegador.
 
 ## Limitaciones
 
-Esta versión es un MVP para demostración. Lo que falta para operar con locales reales:
+Lo que falta o conviene saber antes de operar a gran escala:
 
-- **Los pagos son simulados.** Tarjeta y JUNAEB marcan el pedido como pagado sin cobrar nada. Integrar Webpay
-  requiere credenciales de comercio de Transbank.
-- **No hay verificación de correo ni recuperación de contraseña.** Ambas necesitan un servicio de envío de correos.
+- **La app no cobra.** Se pide en la app y se paga en el local. Integrar pagos (por ejemplo Webpay) requiere
+  credenciales de comercio.
+- **No hay verificación de correo ni recuperación de contraseña por correo.** Ambas necesitan un servicio de envío
+  de correos. Mientras tanto, la plataforma puede generar una contraseña temporal para cualquier cuenta.
 - **Las notificaciones push no se han probado en dispositivos reales**, y la app no se ha probado en iPhone ni
   Safari; las pruebas automáticas corren en Chromium.
 - **En iPhone los avisos push exigen instalar la app** en la pantalla de inicio (requisito de iOS).
-- **Los productos no tienen fotos ni opciones** (tamaños, agregados); usan un ícono.
 - **Un solo servidor con SQLite.** Sirve para pilotos; para muchas sedes a la vez conviene pasar a una base de datos
   administrada.
 - Los menús, precios e historial de demostración son inventados.

@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS shops (
   slot_capacity INTEGER NOT NULL DEFAULT 6,    -- pedidos por franja de 10 minutos
   paused INTEGER NOT NULL DEFAULT 0,
   -- La institución aprueba cada local antes de que aparezca para los estudiantes.
-  status TEXT NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente','activo','suspendido')),
+  status TEXT NOT NULL DEFAULT 'pendiente',
   created_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS users (
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   pass_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('student','shop','admin')),
+  role TEXT NOT NULL,                          -- student | shop | admin (institución) | owner (plataforma)
   campus_id INTEGER REFERENCES campuses(id),
   shop_id INTEGER REFERENCES shops(id),
   institution_id INTEGER REFERENCES institutions(id),  -- solo para administradores
@@ -59,6 +59,13 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   auth TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS images (
+  id INTEGER PRIMARY KEY,
+  shop_id INTEGER NOT NULL REFERENCES shops(id),
+  mime TEXT NOT NULL,
+  data BLOB NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY,
   shop_id INTEGER NOT NULL REFERENCES shops(id),
@@ -66,7 +73,9 @@ CREATE TABLE IF NOT EXISTS products (
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   price INTEGER NOT NULL,                      -- pesos chilenos, sin decimales
-  emoji TEXT NOT NULL DEFAULT '🍽️',
+  emoji TEXT NOT NULL DEFAULT '',              -- ícono opcional
+  image_id INTEGER REFERENCES images(id),      -- foto opcional
+  options TEXT NOT NULL DEFAULT '[]',          -- grupos de opciones (JSON): tamaños, agregados, etc.
   available INTEGER NOT NULL DEFAULT 1,
   deleted INTEGER NOT NULL DEFAULT 0
 );
@@ -76,8 +85,8 @@ CREATE TABLE IF NOT EXISTS orders (
   user_id INTEGER NOT NULL REFERENCES users(id),
   shop_id INTEGER NOT NULL REFERENCES shops(id),
   slot TEXT NOT NULL,                          -- hora de retiro, 'AAAA-MM-DDTHH:MM' hora de Chile
-  status TEXT NOT NULL CHECK (status IN ('recibido','preparando','listo','entregado','cancelado','no_retirado')),
-  payment_method TEXT NOT NULL CHECK (payment_method IN ('tarjeta','junaeb','efectivo')),
+  status TEXT NOT NULL,                        -- recibido | preparando | listo | entregado | cancelado | no_retirado
+  payment_method TEXT NOT NULL DEFAULT 'local', -- por ahora siempre 'local': se paga en el local al retirar
   paid INTEGER NOT NULL DEFAULT 0,
   total INTEGER NOT NULL,
   note TEXT NOT NULL DEFAULT '',
@@ -94,8 +103,9 @@ CREATE TABLE IF NOT EXISTS order_items (
   product_id INTEGER NOT NULL REFERENCES products(id),
   name TEXT NOT NULL,
   emoji TEXT NOT NULL DEFAULT '',
-  price INTEGER NOT NULL,
-  qty INTEGER NOT NULL
+  price INTEGER NOT NULL,                      -- precio unitario, con las opciones elegidas incluidas
+  qty INTEGER NOT NULL,
+  options TEXT NOT NULL DEFAULT '[]'           -- opciones elegidas (JSON), tal como estaban al pedir
 );
 CREATE INDEX IF NOT EXISTS order_items_order ON order_items(order_id);
 CREATE TABLE IF NOT EXISTS order_events (
@@ -107,23 +117,42 @@ CREATE TABLE IF NOT EXISTS order_events (
 CREATE INDEX IF NOT EXISTS order_events_order ON order_events(order_id);
 `;
 
+// Cambios de esquema posteriores a la versión 3, en orden. Cada entrada lleva la base de la versión N a la N+1
+// sin perder datos (por ejemplo: 3: 'ALTER TABLE shops ADD COLUMN phone TEXT'). Nunca se edita una entrada ya publicada.
+const MIGRATIONS = {};
+const FIRST_MIGRATABLE = 3;
+
 /**
- * Abre la base. Si el archivo es de una versión anterior del esquema lanza un error
- * con code 'PICKGO_OLD_DB' para que quien llama decida qué hacer con esos datos.
+ * Abre la base y aplica las migraciones pendientes. Si el archivo es anterior a la primera versión migrable
+ * (solo existieron con datos de demostración) lanza un error con code 'PICKGO_OLD_DB'.
  */
 export function openDb(file) {
   const db = new DatabaseSync(file);
-  const version = db.prepare('PRAGMA user_version').get().user_version;
+  let version = db.prepare('PRAGMA user_version').get().user_version;
   const hasTables = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'").get();
-  if (hasTables && version !== SCHEMA_VERSION) {
+  if (hasTables && (version < FIRST_MIGRATABLE || version > SCHEMA_VERSION)) {
     db.close();
-    throw Object.assign(new Error('La base de datos es de una versión anterior de Pick&Go.'), {
+    throw Object.assign(new Error('La base de datos es de una versión incompatible de Pick&Go.'), {
       code: 'PICKGO_OLD_DB',
     });
   }
   db.exec('PRAGMA foreign_keys = ON;');
-  if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
-  db.exec(SCHEMA);
+  if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
+  if (!hasTables) {
+    db.exec(SCHEMA);
+    version = SCHEMA_VERSION;
+  }
+  for (; version < SCHEMA_VERSION; version++) {
+    db.exec('BEGIN');
+    try {
+      db.exec(MIGRATIONS[version]);
+      db.exec(`PRAGMA user_version = ${version + 1}`);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  }
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return db;
 }

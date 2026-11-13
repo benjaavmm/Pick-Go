@@ -116,6 +116,25 @@ const DATA = [
   },
 ];
 
+// Opciones de ejemplo: un grupo de elección única obligatoria y otro de agregados opcionales.
+const group = (id, name, required, multiple, choices) => ({
+  id,
+  name,
+  required,
+  multiple,
+  choices: choices.map(([n, price], i) => ({ id: `${id}${i + 1}`, name: n, price })),
+});
+const DEMO_OPTIONS = {
+  'Café americano': [group('t', 'Tamaño', true, false, [['Mediano', 0], ['Grande', 400]])],
+  Capuccino: [group('t', 'Tamaño', true, false, [['Mediano', 0], ['Grande', 500]])],
+  'Menú ejecutivo casero': [
+    group('b', 'Bebida', true, false, [['Agua', 0], ['Jugo', 0], ['Bebida', 300]]),
+    group('e', 'Extras', false, true, [['Pan extra', 300], ['Postre', 700]]),
+  ],
+  'Churrasco italiano': [group('e', 'Agregados', false, true, [['Queso', 500], ['Tocino', 700], ['Huevo', 400]])],
+  'Completo italiano': [group('e', 'Agregados', false, true, [['Queso', 400], ['Chucrut', 200]])],
+};
+
 const DEMO_STUDENTS = ['Camila Rojas', 'Matías Soto', 'Valentina Díaz', 'Benjamín Fuentes', 'Antonia Vera', 'Tomás Reyes'];
 
 // Generador determinista: el historial de demostración es igual en cada instalación.
@@ -136,7 +155,7 @@ function seedHistory(db, now, shops, studentIds) {
   const today = chileNow(now).date;
   const insOrder = db.prepare(
     `INSERT INTO orders (code, user_id, shop_id, slot, status, payment_method, paid, total, note, rating, on_time, created_at)
-     VALUES (?,?,?,?,?,?,?,?,'',?,?,?)`,
+     VALUES (?,?,?,?,?,'local',?,?,'',?,?,?)`,
   );
   const insItem = db.prepare('INSERT INTO order_items (order_id, product_id, name, emoji, price, qty) VALUES (?,?,?,?,?,?)');
   const insEvent = db.prepare('INSERT INTO order_events (order_id, status, at) VALUES (?,?,?)');
@@ -166,14 +185,12 @@ function seedHistory(db, now, shops, studentIds) {
         const rating = status === 'entregado' && rand() < 0.6 ? (rand() < 0.75 ? 5 : rand() < 0.7 ? 4 : 3) : null;
         const at = new Date(Date.parse(`${slot}:00-03:00`));
         const iso = (deltaMin) => new Date(at.getTime() + deltaMin * 60000).toISOString();
-        const method = pick(['tarjeta', 'tarjeta', 'junaeb', 'efectivo']);
         const id = insOrder.run(
           `H${String(++n).padStart(5, '0')}`,
           pick(studentIds),
           shop.id,
           slot,
           status,
-          method,
           status === 'entregado' ? 1 : 0,
           total,
           rating,
@@ -230,10 +247,10 @@ export function seedIfEmpty(db, { now = new Date(), history = true } = {}) {
           .run(campusId, s.name, s.description, s.emoji, s.location, s.opens, s.closes, s.prep, s.capacity, nowIso)
           .lastInsertRowid;
         const insProduct = db.prepare(
-          'INSERT INTO products (shop_id, category, name, description, price, emoji) VALUES (?,?,?,?,?,?)',
+          'INSERT INTO products (shop_id, category, name, description, price, emoji, options) VALUES (?,?,?,?,?,?,?)',
         );
         const products = s.products.map((p) => ({
-          id: insProduct.run(shopId, ...p).lastInsertRowid,
+          id: insProduct.run(shopId, ...p, JSON.stringify(DEMO_OPTIONS[p[1]] ?? [])).lastInsertRowid,
           name: p[1],
           price: p[3],
           emoji: p[4],
@@ -243,6 +260,7 @@ export function seedIfEmpty(db, { now = new Date(), history = true } = {}) {
       }
     }
   });
+  insUser.run('Equipo Pick&Go', 'plataforma@pickgo.cl', passHash, 'owner', null, null, null, nowIso);
   const studentIds = [insUser.run('Estudiante Demo', 'estudiante@pickgo.cl', passHash, 'student', firstCampus, null, null, nowIso).lastInsertRowid];
   if (history) {
     DEMO_STUDENTS.forEach((name, i) =>

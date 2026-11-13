@@ -1,10 +1,7 @@
 import {
-  Apple,
-  Banknote,
   Check,
   ChevronRight,
   Clock,
-  CreditCard,
   MapPin,
   Minus,
   Plus,
@@ -28,13 +25,13 @@ import {
   isActive,
   minutesUntil,
   money,
-  PAYMENT_LABEL,
+  optionsText,
   relativeTime,
   slotDay,
   slotLabel,
   STATUS_LABEL,
   type Order,
-  type Payment,
+  type OptionGroup,
   type Product,
   type Shop,
   type Slot,
@@ -42,7 +39,7 @@ import {
   type User,
 } from '../lib';
 import { useApp, useLoad, useOrderEvents, useTick } from '../state';
-import { Empty, ErrorBox, Loading, Logo, Rating, StarsInput, StatusPill, TopBar } from '../ui';
+import { Empty, ErrorBox, Loading, Logo, ProductTile, Rating, Sheet, StarsInput, StatusPill, TopBar } from '../ui';
 import { AccountSettings } from './account';
 import { CampusSelect } from './auth';
 
@@ -77,8 +74,8 @@ export function StudentLayout() {
 }
 
 const ACTIVE_TITLE: Partial<Record<Status, string>> = {
-  recibido: 'Pedido recibido',
-  preparando: 'Lo están preparando',
+  recibido: 'Esperando al local',
+  preparando: 'Aceptado, en preparación',
   listo: '¡Listo para retirar!',
 };
 
@@ -106,6 +103,7 @@ interface SearchHit {
   name: string;
   price: number;
   emoji: string;
+  image: string | null;
   shop_id: number;
   shop_name: string;
 }
@@ -196,9 +194,7 @@ export function Home() {
               {results.map((r) => (
                 <li key={r.id}>
                   <Link to={`/local/${r.shop_id}`} className="card product">
-                    <span className="tile" aria-hidden>
-                      {r.emoji}
-                    </span>
+                    <ProductTile image={r.image} emoji={r.emoji} />
                     <span className="grow">
                       <strong>{r.name}</strong>
                       <span className="muted">{r.shop_name}</span>
@@ -292,11 +288,68 @@ function Stepper({ qty, onChange, label }: { qty: number; onChange: (q: number) 
   );
 }
 
+/** Elegir las opciones de un producto (tamaño, agregados…) antes de sumarlo al carrito. */
+function OptionsSheet({ product, onClose, onAdd }: { product: Product; onClose: () => void; onAdd: (choices: string[]) => void }) {
+  // Los grupos obligatorios de elección única parten con la primera alternativa marcada.
+  const [picked, setPicked] = useState<string[]>(() =>
+    product.options.filter((g) => g.required && !g.multiple).map((g) => g.choices[0].id),
+  );
+  const toggle = (g: OptionGroup, id: string) =>
+    setPicked((cur) => {
+      if (g.multiple) return cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      const others = cur.filter((x) => !g.choices.some((c) => c.id === x));
+      return cur.includes(id) && !g.required ? others : [...others, id];
+    });
+  const missing = product.options.find((g) => g.required && !g.choices.some((c) => picked.includes(c.id)));
+  const total =
+    product.price + product.options.flatMap((g) => g.choices).reduce((n, c) => n + (picked.includes(c.id) ? c.price : 0), 0);
+  return (
+    <Sheet title={product.name} onClose={onClose}>
+      {product.image && <img className="product-photo" src={product.image} alt={product.name} />}
+      {product.description && <p className="muted">{product.description}</p>}
+      {product.options.map((g) => (
+        <section key={g.id} className="opt-group">
+          <h3>
+            {g.name}
+            <small className={g.required ? 'req' : ''}>
+              {g.required ? 'Obligatorio' : 'Opcional'}
+              {g.multiple ? ' · varias' : ' · elige una'}
+            </small>
+          </h3>
+          {g.choices.map((c) => {
+            const on = picked.includes(c.id);
+            return (
+              <button
+                key={c.id}
+                type="button"
+                role={g.multiple ? 'checkbox' : 'radio'}
+                aria-checked={on}
+                className={`opt-choice ${on ? 'on' : ''}`}
+                onClick={() => toggle(g, c.id)}
+              >
+                <span className="radio" aria-hidden>
+                  {on && <Check size={14} strokeWidth={3} />}
+                </span>
+                <span className="grow">{c.name}</span>
+                {c.price > 0 && <span className="muted">+{money(c.price)}</span>}
+              </button>
+            );
+          })}
+        </section>
+      ))}
+      <button className="btn btn-primary btn-block" disabled={!!missing} onClick={() => onAdd(picked)}>
+        {missing ? `Elige ${missing.name.toLowerCase()}` : `Agregar · ${money(total)}`}
+      </button>
+    </Sheet>
+  );
+}
+
 export function ShopPage() {
   const { id } = useParams();
   const { cart, cartCount, cartTotal, addToCart, setQty } = useApp();
   const { data, error, reload } = useLoad(() => api<{ shop: Shop; products: Product[] }>(`/shops/${id}`), [id]);
   const [category, setCategory] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState<Product | null>(null);
   useTick();
 
   const categories = useMemo(() => [...new Set((data?.products ?? []).map((p) => p.category))], [data]);
@@ -318,7 +371,8 @@ export function ShopPage() {
   const { shop, products } = data;
   const current = category && categories.includes(category) ? category : categories[0];
   const inThisShop = cart.shopId === shop.id;
-  const qtyOf = (pid: number) => (inThisShop ? (cart.lines.find((l) => l.productId === pid)?.qty ?? 0) : 0);
+  const qtyOf = (pid: number) =>
+    inThisShop ? cart.lines.filter((l) => l.productId === pid).reduce((n, l) => n + l.qty, 0) : 0;
 
   return (
     <main className="page has-cartbar">
@@ -379,29 +433,46 @@ export function ShopPage() {
           .filter((p) => p.category === current)
           .map((p) => {
             const qty = qtyOf(p.id);
+            const hasOptions = p.options.length > 0;
             return (
               <li key={p.id} className={`card product ${p.available ? '' : 'soldout'}`}>
-                <span className="tile" aria-hidden>
-                  {p.emoji}
-                </span>
+                <ProductTile image={p.image} emoji={p.emoji} />
                 <div className="grow">
                   <strong>{p.name}</strong>
                   {p.description && <span className="muted clamp">{p.description}</span>}
-                  <span className="price">{money(p.price)}</span>
+                  <span className="price">
+                    {hasOptions && p.options.some((g) => g.choices.some((c) => c.price > 0)) ? 'Desde ' : ''}
+                    {money(p.price)}
+                  </span>
                 </div>
                 {!p.available ? (
                   <span className="tag tag-off">Agotado</span>
-                ) : qty > 0 ? (
-                  <Stepper qty={qty} onChange={(q) => setQty(p.id, q)} label={p.name} />
+                ) : qty > 0 && !hasOptions ? (
+                  <Stepper qty={qty} onChange={(q) => setQty(`${p.id}:`, q)} label={p.name} />
                 ) : (
-                  <button className="add" disabled={shop.paused} onClick={() => addToCart(shop, p)} aria-label={`Agregar ${p.name}`}>
-                    <Plus size={22} />
+                  <button
+                    className="add"
+                    disabled={shop.paused}
+                    onClick={() => (hasOptions ? setChoosing(p) : addToCart(shop, p))}
+                    aria-label={`Agregar ${p.name}`}
+                  >
+                    {qty > 0 ? <b>{qty}</b> : <Plus size={22} />}
                   </button>
                 )}
               </li>
             );
           })}
       </ul>
+
+      {choosing && (
+        <OptionsSheet
+          product={choosing}
+          onClose={() => setChoosing(null)}
+          onAdd={(choices) => {
+            if (addToCart(shop, choosing, choices)) setChoosing(null);
+          }}
+        />
+      )}
 
       {inThisShop && cartCount > 0 && (
         <Link to="/carrito" className="cartbar">
@@ -414,13 +485,7 @@ export function ShopPage() {
   );
 }
 
-// ---------- Carrito, hora de retiro y pago ----------
-const PAYMENT_ICON: Record<Payment, ReactNode> = {
-  tarjeta: <CreditCard size={22} />,
-  junaeb: <Apple size={22} />,
-  efectivo: <Banknote size={22} />,
-};
-
+// ---------- Carrito y hora de retiro ----------
 function SlotPicker({ slots, value, onChange }: { slots: Slot[]; value: string; onChange: (s: string) => void }) {
   const hasToday = slots.some((s) => s.day === 'hoy');
   const [day, setDay] = useState<'hoy' | 'manana'>(hasToday ? 'hoy' : 'manana');
@@ -472,9 +537,7 @@ export function Checkout() {
   const navigate = useNavigate();
   const shopId = cart.shopId;
   const slots = useLoad(() => (shopId ? api<Slot[]>(`/shops/${shopId}/slots`) : Promise.resolve([])), [shopId]);
-  const cashAllowed = user!.cash_allowed !== false;
   const [slot, setSlot] = useState('');
-  const [payment, setPayment] = useState<Payment>('tarjeta');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -505,9 +568,8 @@ export function Checkout() {
       const order = await api<Order>('/orders', 'POST', {
         shopId,
         slot,
-        paymentMethod: payment,
         note,
-        items: cart.lines.map((l) => ({ productId: l.productId, qty: l.qty })),
+        items: cart.lines.map((l) => ({ productId: l.productId, qty: l.qty, choices: l.choices })),
       });
       clearCart();
       navigate(`/pedidos/${order.id}`, { replace: true });
@@ -525,15 +587,14 @@ export function Checkout() {
       <StepTitle n={1}>{cart.shopName}</StepTitle>
       <ul className="list">
         {cart.lines.map((l) => (
-          <li key={l.productId} className="card product">
-            <span className="tile" aria-hidden>
-              {l.emoji}
-            </span>
+          <li key={l.key} className="card product">
+            <ProductTile image={l.image} emoji={l.emoji} />
             <div className="grow">
               <strong>{l.name}</strong>
+              {l.detail && <span className="muted">{l.detail}</span>}
               <span className="price">{money(l.price * l.qty)}</span>
             </div>
-            <Stepper qty={l.qty} onChange={(q) => setQty(l.productId, q)} label={l.name} />
+            <Stepper qty={l.qty} onChange={(q) => setQty(l.key, q)} label={l.name} />
           </li>
         ))}
       </ul>
@@ -557,29 +618,24 @@ export function Checkout() {
         )}
       </div>
 
-      <StepTitle n={3}>¿Cómo pagas?</StepTitle>
-      <div className="options" role="radiogroup" aria-label="Método de pago">
-        {(Object.keys(PAYMENT_LABEL) as Payment[]).map((p) => {
-          const blocked = p === 'efectivo' && !cashAllowed;
-          return (
-            <button key={p} role="radio" aria-checked={payment === p} className={payment === p ? 'on' : ''} disabled={blocked} onClick={() => setPayment(p)}>
-              <span className="option-icon" aria-hidden>
-                {PAYMENT_ICON[p]}
-              </span>
-              <span className="grow">
-                {PAYMENT_LABEL[p]}
-                {blocked && <small>No disponible: tienes pedidos anteriores sin retirar</small>}
-              </span>
-              <span className="radio" aria-hidden>
-                {payment === p && <Check size={14} strokeWidth={3} />}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      <p className="muted small">
-        {payment === 'efectivo' ? 'Pagas en caja al retirar tu pedido.' : 'Demo: el pago es simulado, no se hace ningún cobro real.'}
-      </p>
+      <StepTitle n={3}>Pago</StepTitle>
+      <section className="card pay-note">
+        <span className="option-icon" aria-hidden>
+          <Store size={22} />
+        </span>
+        <div className="grow">
+          <strong>Pagas en el local al retirar</strong>
+          <p className="muted">
+            Por ahora no se cobra en la app. Al retirar pagas {money(cartTotal)} con el medio que acepte el local.
+          </p>
+        </div>
+      </section>
+      {user!.can_order === false && (
+        <p className="notice notice-warn">
+          <TriangleAlert size={18} aria-hidden />
+          <span>Tienes varios pedidos sin retirar en los últimos 30 días, así que por ahora no puedes hacer pedidos nuevos.</span>
+        </p>
+      )}
 
       {error && (
         <p className="error" role="alert">
@@ -591,7 +647,7 @@ export function Checkout() {
           <span>{slot ? `Retiro ${slotLabel(slot).toLowerCase()}` : 'Elige una hora de retiro'}</span>
           <strong>{money(cartTotal)}</strong>
         </div>
-        <button className="btn btn-primary" disabled={busy || !slot} onClick={confirm}>
+        <button className="btn btn-primary" disabled={busy || !slot || user!.can_order === false} onClick={confirm}>
           {busy ? 'Enviando…' : 'Confirmar pedido'}
         </button>
       </div>
@@ -653,8 +709,8 @@ export function Orders() {
 
 const STEPS: Status[] = ['recibido', 'preparando', 'listo', 'entregado'];
 const HEADLINE: Record<Status, string> = {
-  recibido: 'El local recibió tu pedido',
-  preparando: 'Están preparando tu pedido',
+  recibido: 'Esperando que el local acepte',
+  preparando: 'Aceptado: lo están preparando',
   listo: '¡Listo! Pasa a retirarlo',
   entregado: 'Pedido entregado',
   cancelado: 'Pedido cancelado',
@@ -763,7 +819,17 @@ export function OrderDetail() {
     replaceCart({
       shopId: o.shop_id,
       shopName: o.shop_name,
-      lines: o.items.map((i) => ({ productId: i.product_id, name: i.name, emoji: i.emoji, price: i.price, qty: i.qty })),
+      lines: o.items.map((i) => ({
+        key: `${i.product_id}:${i.options.map((c) => c.id).sort().join(',')}`,
+        productId: i.product_id,
+        choices: i.options.map((c) => c.id),
+        detail: optionsText(i.options),
+        image: null,
+        name: i.name,
+        emoji: i.emoji,
+        price: i.price,
+        qty: i.qty,
+      })),
     });
     navigate('/carrito');
   };
@@ -812,7 +878,7 @@ export function OrderDetail() {
       {o.status === 'no_retirado' && (
         <p className="notice notice-warn">
           <TriangleAlert size={18} aria-hidden />
-          <span>El local lo preparó y nadie pasó a buscarlo. Con dos pedidos sin retirar, el pago en efectivo se desactiva por 30 días.</span>
+          <span>El local lo preparó y nadie pasó a buscarlo. Con tres pedidos sin retirar en 30 días, se suspenden los pedidos nuevos de tu cuenta.</span>
         </p>
       )}
       {o.status === 'entregado' && <RateCard o={o} onRated={setData} />}
@@ -834,9 +900,10 @@ export function OrderDetail() {
       <section className="card">
         <ul className="lines">
           {o.items.map((i) => (
-            <li key={i.product_id}>
+            <li key={i.id}>
               <span>
                 <b>{i.qty}×</b> {i.name}
+                {i.options.length > 0 && <small className="item-options">{optionsText(i.options)}</small>}
               </span>
               <span>{money(i.price * i.qty)}</span>
             </li>
@@ -848,8 +915,7 @@ export function OrderDetail() {
         </ul>
         {o.note && <p className="muted">Nota: {o.note}</p>}
         <p className="muted">
-          {PAYMENT_LABEL[o.payment_method]} ·{' '}
-          {o.status === 'cancelado' ? 'Sin cobro' : o.paid ? 'Pagado' : 'Se paga en caja al retirar'}
+          {o.status === 'cancelado' || o.status === 'no_retirado' ? 'Sin cobro' : o.paid ? 'Pagado en el local' : 'Se paga en el local al retirar'}
         </p>
       </section>
 

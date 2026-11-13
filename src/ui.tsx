@@ -1,4 +1,4 @@
-import { ArrowLeft, Star, X } from 'lucide-react';
+import { ArrowLeft, Star, UtensilsCrossed, X } from 'lucide-react';
 import { Component, useEffect, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { STATUS_LABEL, type Status } from './lib';
@@ -34,12 +34,22 @@ export function StatusPill({ status }: { status: Status }) {
 }
 
 export const Loading = () => (
-  <div className="loading" role="status" aria-label="Cargando">
-    <span />
-    <span />
-    <span />
-  </div>
+  <p className="loading" role="status">
+    Cargando
+    <i>.</i>
+    <i>.</i>
+    <i>.</i>
+  </p>
 );
+
+/** Imagen de un producto: la foto si tiene, si no el ícono, y si tampoco, un ícono genérico. */
+export function ProductTile({ image, emoji, large }: { image?: string | null; emoji?: string; large?: boolean }) {
+  return (
+    <span className={`tile ${large ? 'tile-lg' : ''} ${image ? 'tile-photo' : ''}`} aria-hidden>
+      {image ? <img src={image} alt="" loading="lazy" decoding="async" /> : emoji ? emoji : <UtensilsCrossed size={large ? 28 : 22} />}
+    </span>
+  );
+}
 
 export function ErrorBox({ text, retry }: { text: string; retry: () => void }) {
   return (

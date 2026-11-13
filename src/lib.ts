@@ -3,7 +3,7 @@ export interface User {
   id: number;
   name: string;
   email: string;
-  role: 'student' | 'shop' | 'admin';
+  role: 'student' | 'shop' | 'admin' | 'owner';
   campus_id: number | null;
   shop_id: number | null;
   institution_id: number | null;
@@ -11,8 +11,9 @@ export interface User {
   institution: string | null;
   shop_name: string | null;
   shop_status: ShopStatus | null;
-  /** false cuando el estudiante acumula pedidos sin retirar y debe pagar al pedir. */
-  cash_allowed?: boolean;
+  /** false cuando el estudiante acumula demasiados pedidos sin retirar. */
+  can_order?: boolean;
+  no_shows?: number;
 }
 export interface Campus {
   id: number;
@@ -46,8 +47,25 @@ export interface Product {
   name: string;
   description: string;
   price: number;
+  /** Ícono opcional (puede venir vacío). */
   emoji: string;
+  /** Foto opcional. */
+  image: string | null;
+  options: OptionGroup[];
   available: boolean;
+}
+export interface OptionGroup {
+  id: string;
+  name: string;
+  required: boolean;
+  multiple: boolean;
+  choices: { id: string; name: string; price: number }[];
+}
+export interface ChosenOption {
+  id: string;
+  group: string;
+  name: string;
+  price: number;
 }
 export interface Slot {
   slot: string;
@@ -56,7 +74,6 @@ export interface Slot {
   remaining: number;
 }
 export type Status = 'recibido' | 'preparando' | 'listo' | 'entregado' | 'cancelado' | 'no_retirado';
-export type Payment = 'tarjeta' | 'junaeb' | 'efectivo';
 export interface Order {
   id: number;
   code: string;
@@ -64,7 +81,6 @@ export interface Order {
   shop_id: number;
   slot: string;
   status: Status;
-  payment_method: Payment;
   paid: boolean;
   total: number;
   note: string;
@@ -76,7 +92,7 @@ export interface Order {
   shop_emoji: string;
   shop_location: string;
   customer_name: string;
-  items: { product_id: number; name: string; emoji: string; price: number; qty: number }[];
+  items: { id: number; product_id: number; name: string; emoji: string; price: number; qty: number; options: ChosenOption[] }[];
   events: { status: Status; at: string }[];
 }
 export interface Totals {
@@ -217,17 +233,13 @@ export const clockTime = (iso: string) =>
   );
 
 export const STATUS_LABEL: Record<Status, string> = {
-  recibido: 'Recibido',
+  recibido: 'Enviado',
   preparando: 'En preparación',
   listo: 'Listo para retirar',
   entregado: 'Entregado',
   cancelado: 'Cancelado',
   no_retirado: 'No retirado',
 };
-export const PAYMENT_LABEL: Record<Payment, string> = {
-  tarjeta: 'Débito o crédito',
-  junaeb: 'Tarjeta JUNAEB',
-  efectivo: 'Efectivo al retirar',
-};
+export const optionsText = (options: { name: string }[]) => options.map((o) => o.name).join(', ');
 export const isActive = (s: Status) => s === 'recibido' || s === 'preparando' || s === 'listo';
 export const firstName = (name: string) => name.trim().split(/\s+/)[0];

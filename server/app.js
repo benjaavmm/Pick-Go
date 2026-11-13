@@ -28,9 +28,9 @@ const fail = (status, message) => {
 
 const RANK = { recibido: 0, preparando: 1, listo: 2, entregado: 3 };
 const ACTIVE = "('recibido','preparando','listo')";
-const PAYMENTS = ['tarjeta', 'junaeb', 'efectivo'];
 const MAX_ACTIVE_ORDERS = 5;
-const NO_SHOW_LIMIT = 2; // con este número de pedidos no retirados en 30 días se exige pago anticipado
+const NO_SHOW_LIMIT = 3; // con este número de pedidos no retirados en 30 días se suspenden los pedidos nuevos
+const MAX_IMAGE_BYTES = 500 * 1024;
 const MAX_STREAMS = 6;
 const CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 // Solo se aceptan suscripciones de los servicios de push de los navegadores:
@@ -201,18 +201,40 @@ export function createApp(
   const student = [auth, role('student')];
   const shopOnly = [auth, role('shop')];
   const adminOnly = [auth, role('admin')];
+  const ownerOnly = [auth, role('owner')];
 
   const startSession = (req, res, userId) => {
     res.setHeader('Set-Cookie', sessionCookie(createSession(db, userId), isSecure(req)));
   };
 
-  const cashAllowed = (userId) => {
+  // Como se paga al retirar, un pedido que nadie busca es una pérdida para el local.
+  const noShows = (userId) => {
     const from = addDays(chileNow(now()).date, -30);
-    const n = db
+    return db
       .prepare("SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND status = 'no_retirado' AND slot >= ?")
       .get(userId, from).c;
-    return n < NO_SHOW_LIMIT;
   };
+
+  const parseJson = (text) => {
+    try {
+      const v = JSON.parse(text);
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  };
+  const productRow = (p) => ({
+    id: p.id,
+    shop_id: p.shop_id,
+    category: p.category,
+    name: p.name,
+    description: p.description,
+    price: p.price,
+    emoji: p.emoji,
+    image: p.image_id ? `/api/images/${p.image_id}` : null,
+    options: parseJson(p.options),
+    available: !!p.available,
+  });
 
   const userOut = (id) => {
     const u = db
@@ -228,7 +250,10 @@ export function createApp(
          WHERE u.id = ?`,
       )
       .get(id);
-    if (u.role === 'student') u.cash_allowed = cashAllowed(id);
+    if (u.role === 'student') {
+      u.no_shows = noShows(id);
+      u.can_order = u.no_shows < NO_SHOW_LIMIT;
+    }
     return u;
   };
 
@@ -273,8 +298,9 @@ export function createApp(
     paid: !!o.paid,
     on_time: o.on_time === null ? null : !!o.on_time,
     items: db
-      .prepare('SELECT product_id, name, emoji, price, qty FROM order_items WHERE order_id = ? ORDER BY id')
-      .all(o.id),
+      .prepare('SELECT id, product_id, name, emoji, price, qty, options FROM order_items WHERE order_id = ? ORDER BY id')
+      .all(o.id)
+      .map((i) => ({ ...i, options: parseJson(i.options) })),
     events: db.prepare('SELECT status, at FROM order_events WHERE order_id = ? ORDER BY id').all(o.id),
   });
 
@@ -284,7 +310,7 @@ export function createApp(
   };
 
   const STUDENT_PUSH = {
-    preparando: (o) => `${o.shop_name} está preparando tu pedido.`,
+    preparando: (o) => `${o.shop_name} aceptó tu pedido y lo está preparando.`,
     listo: (o) => `Tu pedido ${o.code} está listo. Pasa a retirarlo en ${o.shop_name}.`,
     cancelado: (o) => `Tu pedido ${o.code} en ${o.shop_name} fue cancelado.`,
   };
@@ -447,6 +473,13 @@ export function createApp(
   // ---------- público ----------
   app.get('/api/config', (_req, res) => {
     res.json({ demo, push_key: push?.publicKey ?? null });
+  });
+
+  app.get('/api/images/:id', (req, res) => {
+    const img = db.prepare('SELECT mime, data FROM images WHERE id = ?').get(Number(req.params.id));
+    if (!img) fail(404, 'No encontramos esa imagen.');
+    res.set({ 'Content-Type': img.mime, 'Cache-Control': 'public, max-age=31536000, immutable' });
+    res.end(Buffer.from(img.data));
   });
 
   app.get('/api/campuses', (_req, res) => {
@@ -623,7 +656,7 @@ export function createApp(
 
   // ---------- eventos en vivo ----------
   app.get('/api/events', auth, (req, res) => {
-    if (req.user.role === 'admin') fail(403, 'Tu cuenta no tiene acceso a esta sección.');
+    if (req.user.role !== 'student' && req.user.role !== 'shop') fail(403, 'Tu cuenta no tiene acceso a esta sección.');
     const key = req.user.role === 'shop' ? `shop:${req.user.shop_id}` : `user:${req.user.id}`;
     res.set({
       'Content-Type': 'text/event-stream',
@@ -648,12 +681,9 @@ export function createApp(
   app.get('/api/shops/:id', auth, (req, res) => {
     const shop = visibleShop(req, Number(req.params.id));
     const products = db
-      .prepare(
-        `SELECT id, shop_id, category, name, description, price, emoji, available
-         FROM products WHERE shop_id = ? AND deleted = 0 ORDER BY id`,
-      )
+      .prepare('SELECT * FROM products WHERE shop_id = ? AND deleted = 0 ORDER BY id')
       .all(shop.id)
-      .map((p) => ({ ...p, available: !!p.available }));
+      .map(productRow);
     res.json({ shop: shopOut(shop), products });
   });
 
@@ -669,12 +699,17 @@ export function createApp(
     if (q.length < 2) return res.json([]);
     const rows = db
       .prepare(
-        `SELECT p.id, p.name, p.description, p.price, p.emoji, p.category, s.id AS shop_id, s.name AS shop_name
+        `SELECT p.id, p.name, p.description, p.price, p.emoji, p.image_id, p.category, s.id AS shop_id, s.name AS shop_name
          FROM products p JOIN shops s ON s.id = p.shop_id
          WHERE s.campus_id = ? AND s.status = 'activo' AND p.deleted = 0 AND p.available = 1`,
       )
       .all(Number(req.params.id));
-    res.json(rows.filter((r) => plain(`${r.name} ${r.category} ${r.description}`).includes(q)).slice(0, 20));
+    res.json(
+      rows
+        .filter((r) => plain(`${r.name} ${r.category} ${r.description}`).includes(q))
+        .slice(0, 20)
+        .map(({ image_id, ...r }) => ({ ...r, image: image_id ? `/api/images/${image_id}` : null })),
+    );
   });
 
   // ---------- estudiante: pedidos ----------
@@ -683,9 +718,8 @@ export function createApp(
     const shop = getShop(int(b.shopId, 1, 1e9, 'El local'));
     if (shop.status !== 'activo') fail(404, 'No encontramos ese local.');
     if (shop.paused) fail(409, `${shop.name} no está recibiendo pedidos en este momento.`);
-    if (!PAYMENTS.includes(b.paymentMethod)) fail(400, 'Elige un método de pago.');
-    if (b.paymentMethod === 'efectivo' && !cashAllowed(req.user.id))
-      fail(409, 'Tienes pedidos anteriores sin retirar, así que por ahora debes pagar al pedir. Elige tarjeta o JUNAEB.');
+    if (noShows(req.user.id) >= NO_SHOW_LIMIT)
+      fail(409, `Tienes ${NO_SHOW_LIMIT} pedidos sin retirar en los últimos 30 días, así que por ahora no puedes hacer pedidos nuevos.`);
     const note = str(b.note, 200, 'La nota', { required: false });
     if (!Array.isArray(b.items) || b.items.length === 0) fail(400, 'Tu carrito está vacío.');
     if (b.items.length > 30) fail(400, 'El pedido tiene demasiados productos distintos.');
@@ -698,12 +732,26 @@ export function createApp(
         .prepare('SELECT * FROM products WHERE id = ? AND shop_id = ? AND deleted = 0')
         .get(Number(it?.productId), shop.id);
       if (!p) fail(409, 'Un producto de tu carrito ya no existe. Revisa el menú.');
-      if (seen.has(p.id)) fail(400, 'Hay un producto repetido en el pedido.');
-      seen.add(p.id);
       if (!p.available) fail(409, `"${p.name}" se agotó. Quítalo del carrito para continuar.`);
-      return { p, qty };
+      // Opciones elegidas: se validan contra el menú actual y su precio también sale de la base.
+      const wanted = new Set(Array.isArray(it?.choices) ? it.choices.slice(0, 40).map(String) : []);
+      const chosen = [];
+      for (const g of parseJson(p.options)) {
+        const picked = g.choices.filter((c) => wanted.has(c.id));
+        if (g.required && picked.length === 0) fail(409, `Elige ${g.name.toLowerCase()} para "${p.name}".`);
+        if (!g.multiple && picked.length > 1) fail(400, `Solo puedes elegir una opción de ${g.name.toLowerCase()} en "${p.name}".`);
+        for (const c of picked) {
+          wanted.delete(c.id);
+          chosen.push({ id: c.id, group: g.name, name: c.name, price: c.price });
+        }
+      }
+      if (wanted.size > 0) fail(409, `El menú de "${p.name}" cambió. Vuelve a agregarlo al carrito.`);
+      const key = `${p.id}:${chosen.map((c) => c.id).sort().join(',')}`;
+      if (seen.has(key)) fail(400, 'Hay un producto repetido en el pedido.');
+      seen.add(key);
+      return { p, qty, chosen, unit: p.price + chosen.reduce((n, c) => n + c.price, 0) };
     });
-    const total = lines.reduce((sum, l) => sum + l.p.price * l.qty, 0);
+    const total = lines.reduce((sum, l) => sum + l.unit * l.qty, 0);
 
     const active = db
       .prepare(`SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND status IN ${ACTIVE}`)
@@ -730,16 +778,16 @@ export function createApp(
           shop.id,
           slot.slot,
           'recibido',
-          b.paymentMethod,
-          b.paymentMethod === 'efectivo' ? 0 : 1, // pago simulado: tarjeta y JUNAEB quedan pagados al confirmar
+          'local', // por ahora no hay pagos en la app: se paga en el local al retirar
+          0,
           total,
           note,
           at,
         ).lastInsertRowid;
       const ins = db.prepare(
-        'INSERT INTO order_items (order_id, product_id, name, emoji, price, qty) VALUES (?,?,?,?,?,?)',
+        'INSERT INTO order_items (order_id, product_id, name, emoji, price, qty, options) VALUES (?,?,?,?,?,?,?)',
       );
-      for (const l of lines) ins.run(orderId, l.p.id, l.p.name, l.p.emoji, l.p.price, l.qty);
+      for (const l of lines) ins.run(orderId, l.p.id, l.p.name, l.p.emoji, l.unit, l.qty, JSON.stringify(l.chosen));
       db.prepare('INSERT INTO order_events (order_id, status, at) VALUES (?,?,?)').run(orderId, 'recibido', at);
       db.exec('COMMIT');
     } catch (e) {
@@ -866,7 +914,7 @@ export function createApp(
       return res.json(setStatus(o, 'no_retirado'));
     }
     if (!(status in RANK) || RANK[status] <= RANK[o.status]) fail(400, 'Ese cambio de estado no es válido.');
-    // Al entregar, el efectivo queda cobrado en caja.
+    // Al entregar, el pedido queda cobrado en el local.
     res.json(setStatus(o, status, status === 'entregado' ? { paid: true } : {}));
   });
 
@@ -883,59 +931,129 @@ export function createApp(
   });
 
   // menú del local
-  const productBody = (b, base = {}) => {
+  const newId = () => crypto.randomBytes(4).toString('hex');
+  /** Valida los grupos de opciones de un producto (tamaños, agregados…) y les asigna identificadores estables. */
+  const optionsOf = (v) => {
+    if (!Array.isArray(v)) fail(400, 'Las opciones no son válidas.');
+    if (v.length > 8) fail(400, 'Un producto puede tener hasta 8 grupos de opciones.');
+    const ids = new Set();
+    const idOf = (raw) => {
+      let id = typeof raw === 'string' && /^[a-z0-9]{1,12}$/i.test(raw) && !ids.has(raw) ? raw : newId();
+      while (ids.has(id)) id = newId();
+      ids.add(id);
+      return id;
+    };
+    return v.map((g) => {
+      const choices = Array.isArray(g?.choices) ? g.choices : [];
+      if (choices.length < 1 || choices.length > 15) fail(400, 'Cada grupo de opciones necesita entre 1 y 15 alternativas.');
+      return {
+        id: idOf(g.id),
+        name: str(g.name, 30, 'El nombre del grupo de opciones'),
+        required: !!g.required,
+        multiple: !!g.multiple,
+        choices: choices.map((c) => ({
+          id: idOf(c?.id),
+          name: str(c?.name, 40, 'El nombre de la alternativa'),
+          price: int(c?.price ?? 0, 0, 1_000_000, 'El precio de la alternativa'),
+        })),
+      };
+    });
+  };
+  const productBody = (b, base = {}, shopId) => {
     const p = {
       category: b.category !== undefined ? str(b.category, 30, 'La categoría') : base.category,
       name: b.name !== undefined ? str(b.name, 60, 'El nombre') : base.name,
       description:
         b.description !== undefined ? str(b.description, 120, 'La descripción', { required: false }) : base.description ?? '',
       price: b.price !== undefined ? int(b.price, 0, 1_000_000, 'El precio') : base.price,
-      emoji: b.emoji !== undefined ? str(b.emoji, 8, 'El ícono') : base.emoji ?? '🍽️',
+      emoji: b.emoji !== undefined ? str(b.emoji, 8, 'El ícono', { required: false }) : base.emoji ?? '',
       available: b.available !== undefined ? (b.available ? 1 : 0) : base.available ?? 1,
+      image_id: base.image_id ?? null,
+      options: base.options ?? '[]',
     };
+    if (b.imageId !== undefined) {
+      p.image_id = b.imageId === null ? null : int(b.imageId, 1, 1e12, 'La foto');
+      if (p.image_id && !db.prepare('SELECT 1 FROM images WHERE id = ? AND shop_id = ?').get(p.image_id, shopId))
+        fail(400, 'Esa foto no pertenece a tu local.');
+    }
+    if (b.options !== undefined) p.options = JSON.stringify(optionsOf(b.options));
     if (p.category === undefined || p.name === undefined || p.price === undefined)
       fail(400, 'El producto necesita categoría, nombre y precio.');
     return p;
   };
-  const productOut = (id) => {
-    const p = db
-      .prepare('SELECT id, shop_id, category, name, description, price, emoji, available FROM products WHERE id = ?')
-      .get(id);
-    return { ...p, available: !!p.available };
+  const productOut = (id) => productRow(db.prepare('SELECT * FROM products WHERE id = ?').get(id));
+  /** Borra las fotos del local que ya no usa ningún producto (con una hora de gracia para las recién subidas). */
+  const sweepImages = (shopId) => {
+    db.prepare(
+      `DELETE FROM images WHERE shop_id = ? AND created_at < ?
+         AND id NOT IN (SELECT image_id FROM products WHERE shop_id = ? AND image_id IS NOT NULL AND deleted = 0)`,
+    ).run(shopId, new Date(now().getTime() - 3600_000).toISOString(), shopId);
   };
+
+  // Fotos de productos. El navegador las reduce antes de subirlas; aquí se revisa que de verdad sean imágenes.
+  const imageType = (buf) => {
+    if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+    if (buf.length > 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+    if (buf.length > 12 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+    return null;
+  };
+  app.post(
+    '/api/shop/images',
+    shopOnly,
+    express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: MAX_IMAGE_BYTES }),
+    (req, res) => {
+      const buf = Buffer.isBuffer(req.body) ? req.body : null;
+      const mime = buf && imageType(buf);
+      if (!mime) fail(400, 'El archivo no es una imagen JPG, PNG o WebP.');
+      const count = db.prepare('SELECT COUNT(*) AS c FROM images WHERE shop_id = ?').get(req.user.shop_id).c;
+      if (count >= 400) fail(409, 'Llegaste al máximo de fotos. Elimina productos que ya no uses.');
+      const id = db
+        .prepare('INSERT INTO images (shop_id, mime, data, created_at) VALUES (?,?,?,?)')
+        .run(req.user.shop_id, mime, buf, now().toISOString()).lastInsertRowid;
+      res.status(201).json({ id, url: `/api/images/${id}` });
+    },
+  );
   const myProduct = (req) =>
     db
       .prepare('SELECT * FROM products WHERE id = ? AND shop_id = ? AND deleted = 0')
       .get(Number(req.params.id), req.user.shop_id) ?? fail(404, 'No encontramos ese producto.');
 
   app.post('/api/shop/products', shopOnly, (req, res) => {
-    const p = productBody(req.body ?? {});
+    const p = productBody(req.body ?? {}, {}, req.user.shop_id);
     const count = db.prepare('SELECT COUNT(*) AS c FROM products WHERE shop_id = ? AND deleted = 0').get(req.user.shop_id).c;
     if (count >= 300) fail(409, 'Llegaste al máximo de 300 productos en el menú.');
     const id = db
-      .prepare('INSERT INTO products (shop_id, category, name, description, price, emoji, available) VALUES (?,?,?,?,?,?,?)')
-      .run(req.user.shop_id, p.category, p.name, p.description, p.price, p.emoji, p.available).lastInsertRowid;
+      .prepare(
+        'INSERT INTO products (shop_id, category, name, description, price, emoji, available, image_id, options) VALUES (?,?,?,?,?,?,?,?,?)',
+      )
+      .run(req.user.shop_id, p.category, p.name, p.description, p.price, p.emoji, p.available, p.image_id, p.options).lastInsertRowid;
     res.status(201).json(productOut(id));
   });
 
   app.patch('/api/shop/products/:id', shopOnly, (req, res) => {
     const current = myProduct(req);
-    const p = productBody(req.body ?? {}, current);
-    db.prepare('UPDATE products SET category=?, name=?, description=?, price=?, emoji=?, available=? WHERE id=?').run(
+    const p = productBody(req.body ?? {}, current, req.user.shop_id);
+    db.prepare(
+      'UPDATE products SET category=?, name=?, description=?, price=?, emoji=?, available=?, image_id=?, options=? WHERE id=?',
+    ).run(
       p.category,
       p.name,
       p.description,
       p.price,
       p.emoji,
       p.available,
+      p.image_id,
+      p.options,
       current.id,
     );
+    sweepImages(req.user.shop_id);
     res.json(productOut(current.id));
   });
 
   app.delete('/api/shop/products/:id', shopOnly, (req, res) => {
     // Borrado lógico: los pedidos antiguos siguen apuntando al producto.
     db.prepare('UPDATE products SET deleted = 1 WHERE id = ?').run(myProduct(req).id);
+    sweepImages(req.user.shop_id);
     res.json({ ok: true });
   });
 
@@ -1010,6 +1128,80 @@ export function createApp(
       .prepare('INSERT INTO campuses (institution_id, name, city) VALUES (?,?,?)')
       .run(req.user.institution_id, name, city).lastInsertRowid;
     res.status(201).json({ id, name, city });
+  });
+
+  // ---------- plataforma: quien opera Pick&Go crea instituciones y sus cuentas de administración ----------
+  const tempPassword = () => crypto.randomBytes(9).toString('base64url');
+
+  app.get('/api/owner/overview', ownerOnly, (_req, res) => {
+    const institutions = db.prepare('SELECT id, name FROM institutions ORDER BY name').all().map((i) => ({
+      ...i,
+      campuses: db.prepare('SELECT id, name, city FROM campuses WHERE institution_id = ? ORDER BY name').all(i.id),
+      admins: db
+        .prepare("SELECT id, name, email FROM users WHERE role = 'admin' AND institution_id = ? AND deleted_at IS NULL ORDER BY id")
+        .all(i.id),
+      shops: db
+        .prepare("SELECT COUNT(*) AS c FROM shops s JOIN campuses c ON c.id = s.campus_id WHERE c.institution_id = ? AND s.status = 'activo'")
+        .get(i.id).c,
+      students: db
+        .prepare("SELECT COUNT(*) AS c FROM users u JOIN campuses c ON c.id = u.campus_id WHERE c.institution_id = ? AND u.role = 'student' AND u.deleted_at IS NULL")
+        .get(i.id).c,
+      orders: db
+        .prepare('SELECT COUNT(*) AS c FROM orders o JOIN shops s ON s.id = o.shop_id JOIN campuses c ON c.id = s.campus_id WHERE c.institution_id = ?')
+        .get(i.id).c,
+    }));
+    res.json({ institutions });
+  });
+
+  const createAdmin = (institutionId, institutionName, rawEmail) => {
+    const email = emailOf(rawEmail);
+    emailFree(email);
+    const password = tempPassword();
+    db.prepare(
+      `INSERT INTO users (name, email, pass_hash, role, institution_id, created_at) VALUES (?,?,?,'admin',?,?)`,
+    ).run(`Administración ${institutionName}`, email, hashPassword(password), institutionId, now().toISOString());
+    return { email, password };
+  };
+
+  app.post('/api/owner/institutions', ownerOnly, (req, res) => {
+    const b = req.body ?? {};
+    const name = str(b.name, 80, 'El nombre de la institución');
+    const campus = str(b.campus, 60, 'El nombre de la sede');
+    const city = str(b.city, 60, 'La ciudad');
+    if (db.prepare('SELECT 1 FROM institutions WHERE lower(name) = lower(?)').get(name))
+      fail(409, 'Ya existe una institución con ese nombre.');
+    db.exec('BEGIN');
+    let out;
+    try {
+      const id = db.prepare('INSERT INTO institutions (name) VALUES (?)').run(name).lastInsertRowid;
+      db.prepare('INSERT INTO campuses (institution_id, name, city) VALUES (?,?,?)').run(id, campus, city);
+      out = { id, name, admin: createAdmin(id, name, b.adminEmail) };
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    // La contraseña temporal se muestra una sola vez: quien la recibe debe cambiarla al entrar.
+    res.status(201).json(out);
+  });
+
+  app.post('/api/owner/institutions/:id/admins', ownerOnly, (req, res) => {
+    const inst = db.prepare('SELECT id, name FROM institutions WHERE id = ?').get(Number(req.params.id));
+    if (!inst) fail(404, 'No encontramos esa institución.');
+    res.status(201).json(createAdmin(inst.id, inst.name, req.body?.email));
+  });
+
+  // Mientras no haya envío de correos, así se recupera el acceso de alguien que olvidó su contraseña.
+  app.post('/api/owner/reset-password', ownerOnly, (req, res) => {
+    const email = emailOf(req.body?.email);
+    const u = db.prepare("SELECT id, role FROM users WHERE email = ? AND deleted_at IS NULL").get(email);
+    if (!u) fail(404, 'No hay una cuenta con ese correo.');
+    if (u.role === 'owner') fail(403, 'La contraseña de la plataforma se cambia desde su propia cuenta.');
+    const password = tempPassword();
+    db.prepare('UPDATE users SET pass_hash = ? WHERE id = ?').run(hashPassword(password), u.id);
+    destroyUserSessions(db, u.id);
+    limiter.clear(`login|${email}`);
+    res.json({ email, password });
   });
 
   // ---------- app web compilada ----------

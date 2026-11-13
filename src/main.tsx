@@ -6,21 +6,29 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AdminAccount, AdminCampuses, AdminLayout, AdminOverview, AdminShops } from './pages/admin';
 import { Help, Login, Privacy, Register, RegisterShop } from './pages/auth';
+import { OwnerAccess, OwnerAccount, OwnerInstitutions, OwnerLayout } from './pages/owner';
 import { ShopLayout, ShopMenu, ShopOrders, ShopSettings, ShopStatsPage } from './pages/shop';
 import { Checkout, Home, OrderDetail, Orders, Profile, ShopPage, StudentLayout } from './pages/student';
 import { AppProvider, applyTheme, useApp } from './state';
-import { ErrorBoundary, Logo, Splash } from './ui';
+import { ErrorBoundary, Loading, Logo, Splash } from './ui';
 import { WifiOff } from 'lucide-react';
 import './styles.css';
 
 function Routing() {
-  const { user, loading, offline, retry } = useApp();
+  const { user, loading, intro, offline, retry } = useApp();
   const { pathname } = useLocation();
   // Cada pantalla parte arriba, también al entrar o salir de la cuenta.
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname, user?.id]);
-  if (loading) return <Splash />;
+  if (loading)
+    return intro ? (
+      <Splash />
+    ) : (
+      <div className="splash">
+        <Loading />
+      </div>
+    );
   if (offline)
     return (
       <div className="splash crash">
@@ -40,6 +48,18 @@ function Routing() {
         <Route path="/registro-local" element={<RegisterShop />} />
         <Route path="/privacidad" element={<div className="app"><Privacy /></div>} />
         <Route path="*" element={<Login />} />
+      </Routes>
+    );
+  if (user.role === 'owner')
+    return (
+      <Routes>
+        <Route element={<OwnerLayout />}>
+          <Route path="/plataforma" element={<OwnerInstitutions />} />
+          <Route path="/plataforma/accesos" element={<OwnerAccess />} />
+          <Route path="/plataforma/cuenta" element={<OwnerAccount />} />
+        </Route>
+        <Route path="/privacidad" element={<div className="app"><Privacy back="/plataforma/cuenta" /></div>} />
+        <Route path="*" element={<Navigate to="/plataforma" replace />} />
       </Routes>
     );
   if (user.role === 'admin')
