@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { createApp } from './app.js';
-import { openDb } from './db.js';
+import { DatabaseSync } from 'node:sqlite';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { openDb, SCHEMA_VERSION } from './db.js';
 import { DEMO_PASSWORD, seedIfEmpty } from './seed.js';
 import { buildSlots, chileNow } from './time.js';
 
@@ -445,4 +449,42 @@ test('la plataforma crea instituciones y recupera accesos; nadie más puede', as
   assert.equal((await client()('POST', '/api/auth/login', { email, password: r.body.password })).status, 200);
   assert.equal((await owner('POST', '/api/owner/reset-password', { email: 'plataforma@pickgo.cl' })).status, 403);
   assert.equal((await owner('POST', '/api/owner/reset-password', { email: 'nadie@x.cl' })).status, 404);
+});
+
+test('aceptación automática: el pedido entra directo a preparación y se avisa al estudiante', async () => {
+  const shopUser = await login('pepepug@pickgo.cl');
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Pepepug'").get();
+  assert.equal((await shopUser('PATCH', '/api/shop/me', { auto_accept: true })).body.auto_accept, true);
+  const c = client();
+  const campus = db.prepare('SELECT id FROM campuses LIMIT 1').get().id;
+  const me = (await c('POST', '/api/auth/register', { name: 'Auto', email: 'auto@duocuc.cl', password: 'clave-segura', campusId: campus })).body;
+  pushed.length = 0;
+  const r = await c('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T15:30', items: [{ productId: productOf(shop.id, 'Papas fritas').id, qty: 1 }] });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.status, 'preparando');
+  assert.deepEqual(r.body.events.map((e) => e.status), ['recibido', 'preparando']);
+  assert.ok(pushed.some((p) => p.user === me.id && /aceptó/.test(p.body)));
+  assert.equal((await c('POST', `/api/orders/${r.body.id}/cancel`)).status, 409);
+  await shopUser('PATCH', '/api/shop/me', { auto_accept: false });
+});
+
+test('una base de la versión 3 se actualiza sin perder datos', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pickgo-')), 'v3.db');
+  const old = new DatabaseSync(file);
+  old.exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);
+            CREATE TABLE shops (id INTEGER PRIMARY KEY, name TEXT NOT NULL, paused INTEGER NOT NULL DEFAULT 0);
+            INSERT INTO shops (name, paused) VALUES ('Kiosko antiguo', 1);
+            PRAGMA user_version = 3;`);
+  old.close();
+  const migrated = openDb(file);
+  assert.equal(migrated.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
+  const row = migrated.prepare('SELECT name, paused, auto_accept FROM shops').get();
+  assert.deepEqual({ ...row }, { name: 'Kiosko antiguo', paused: 1, auto_accept: 0 });
+  migrated.close();
+  // Una base anterior a la primera versión migrable no se toca: se rechaza para apartarla.
+  const ancient = path.join(path.dirname(file), 'v2.db');
+  const a = new DatabaseSync(ancient);
+  a.exec('CREATE TABLE users (id INTEGER PRIMARY KEY); PRAGMA user_version = 2;');
+  a.close();
+  assert.throws(() => openDb(ancient), { code: 'PICKGO_OLD_DB' });
 });

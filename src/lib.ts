@@ -34,6 +34,7 @@ export interface Shop {
   prep_minutes: number;
   slot_capacity: number;
   paused: boolean;
+  auto_accept: boolean;
   status: ShopStatus;
   rating: number | null;
   ratings: number;

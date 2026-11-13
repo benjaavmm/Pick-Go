@@ -2733,3 +2733,10 @@ th.num {
     transition: none !important;
   }
 }
+
+.banner-button {
+  width: 100%;
+  border: 0;
+  text-align: left;
+  font: inherit;
+}

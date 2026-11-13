@@ -135,7 +135,7 @@ function loadCart(): Cart {
   return EMPTY_CART;
 }
 
-function beep() {
+export function beep() {
   try {
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new AC();

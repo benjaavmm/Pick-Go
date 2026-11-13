@@ -274,6 +274,7 @@ export function createApp(
     return {
       ...s,
       paused: !!s.paused,
+      auto_accept: !!s.auto_accept,
       is_open: isOpenNow(s, now()),
       next_slot: next ? { slot: next.slot, day: next.day, time: next.time } : null,
       rating: r.n ? Math.round(r.avg * 10) / 10 : null,
@@ -794,7 +795,9 @@ export function createApp(
       db.exec('ROLLBACK');
       throw e;
     }
-    const order = getOrder(orderId);
+    let order = getOrder(orderId);
+    // Con aceptación automática el pedido entra directo a preparación y el estudiante recibe el aviso de inmediato.
+    if (shop.auto_accept) order = setStatus(order, 'preparando');
     hub.send(`shop:${shop.id}`, 'order', { type: 'new', order });
     push?.toShop(shop.id, {
       title: `Nuevo pedido para las ${order.slot.slice(11)}`,
@@ -855,10 +858,11 @@ export function createApp(
       prep_minutes: b.prep_minutes !== undefined ? int(b.prep_minutes, 0, 120, 'El tiempo de preparación') : s.prep_minutes,
       slot_capacity: b.slot_capacity !== undefined ? int(b.slot_capacity, 1, 100, 'El cupo por franja') : s.slot_capacity,
       paused: b.paused !== undefined ? (b.paused ? 1 : 0) : s.paused,
+      auto_accept: b.auto_accept !== undefined ? (b.auto_accept ? 1 : 0) : s.auto_accept,
     };
     if (next.closes <= next.opens) fail(400, 'La hora de cierre debe ser posterior a la de apertura.');
     db.prepare(
-      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?
+      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?
        WHERE id=?`,
     ).run(
       next.name,
@@ -870,6 +874,7 @@ export function createApp(
       next.prep_minutes,
       next.slot_capacity,
       next.paused,
+      next.auto_accept,
       s.id,
     );
     res.json(shopOut(getShop(s.id)));

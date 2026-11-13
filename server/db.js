@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS shops (
   prep_minutes INTEGER NOT NULL DEFAULT 10,    -- anticipación mínima para preparar
   slot_capacity INTEGER NOT NULL DEFAULT 6,    -- pedidos por franja de 10 minutos
   paused INTEGER NOT NULL DEFAULT 0,
+  auto_accept INTEGER NOT NULL DEFAULT 0,      -- los pedidos nuevos pasan directo a preparación
   -- La institución aprueba cada local antes de que aparezca para los estudiantes.
   status TEXT NOT NULL DEFAULT 'pendiente',
   created_at TEXT NOT NULL DEFAULT ''
@@ -119,7 +120,9 @@ CREATE INDEX IF NOT EXISTS order_events_order ON order_events(order_id);
 
 // Cambios de esquema posteriores a la versión 3, en orden. Cada entrada lleva la base de la versión N a la N+1
 // sin perder datos (por ejemplo: 3: 'ALTER TABLE shops ADD COLUMN phone TEXT'). Nunca se edita una entrada ya publicada.
-const MIGRATIONS = {};
+const MIGRATIONS = {
+  3: 'ALTER TABLE shops ADD COLUMN auto_accept INTEGER NOT NULL DEFAULT 0',
+};
 const FIRST_MIGRATABLE = 3;
 
 /**

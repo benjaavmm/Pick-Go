@@ -1,4 +1,5 @@
 import {
+  BellRing,
   Camera,
   ChartColumn,
   ClipboardList,
@@ -13,6 +14,7 @@ import {
   Trash2,
   TriangleAlert,
   UtensilsCrossed,
+  Zap,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
@@ -35,7 +37,7 @@ import {
   type Status,
   type User,
 } from '../lib';
-import { useApp, useLoad, useOrderEvents, useTick } from '../state';
+import { beep, useApp, useLoad, useOrderEvents, useTick } from '../state';
 import { BarChart, Empty, Kpi, Loading, Logo, ProductTile, Sheet } from '../ui';
 import { AccountSettings } from './account';
 
@@ -255,6 +257,32 @@ export function ShopOrders() {
     return () => clearInterval(t);
   }, [reload]);
 
+  // Modo mostrador: la pantalla no se apaga mientras el tablero está abierto.
+  useEffect(() => {
+    type Lock = { release: () => Promise<void> };
+    const wl = (navigator as unknown as { wakeLock?: { request: (t: 'screen') => Promise<Lock> } }).wakeLock;
+    if (!wl) return;
+    let lock: Lock | null = null;
+    const hold = () => {
+      if (document.visibilityState === 'visible') wl.request('screen').then((l) => (lock = l), () => {});
+    };
+    hold();
+    document.addEventListener('visibilitychange', hold);
+    return () => {
+      document.removeEventListener('visibilitychange', hold);
+      void lock?.release().catch(() => {});
+    };
+  }, []);
+
+  // Mientras haya pedidos sin aceptar, la alerta se repite: un solo sonido se pierde con el ruido del local.
+  const [sound, setSound] = useState(false);
+  const waiting = (data?.orders ?? []).filter((o) => o.status === 'recibido').length;
+  useEffect(() => {
+    if (!sound || waiting === 0) return;
+    const t = setInterval(beep, 7000);
+    return () => clearInterval(t);
+  }, [sound, waiting]);
+
   const move = async (o: Order, to: Status) => {
     try {
       await api(`/shop/orders/${o.id}/status`, 'POST', { status: to });
@@ -318,6 +346,22 @@ export function ShopOrders() {
           <Kpi label="Ventas de hoy" value={moneyShort(sales)} tone="accent" />
         </div>
       </section>
+      {!sound && (
+        <button
+          className="banner banner-link banner-button"
+          onClick={() => {
+            // Los navegadores solo permiten sonido después de que la persona toca la pantalla.
+            beep();
+            setSound(true);
+          }}
+        >
+          <BellRing size={18} aria-hidden />
+          <span>
+            <strong>Activa el sonido de alerta.</strong> Tócalo al abrir el tablero: sonará cada vez que entre un pedido y
+            seguirá sonando hasta que lo aceptes.
+          </span>
+        </button>
+      )}
       {error && <p className="error">{error}</p>}
       {!data && !error && <Loading />}
       <div className="board">
@@ -860,6 +904,30 @@ export function ShopSettings() {
         >
           {shop.paused ? 'Reanudar' : 'Pausar'}
         </button>
+      </section>
+
+      <section className="card setting">
+        <span className="setting-icon" aria-hidden>
+          <Zap size={20} />
+        </span>
+        <div className="grow">
+          <strong>Aceptar pedidos automáticamente</strong>
+          <p className="muted">
+            {shop.auto_accept
+              ? 'Los pedidos entran directo a preparación. Úsalo si siempre puedes cumplir lo que está en el menú.'
+              : 'Hoy revisas y aceptas cada pedido. Actívalo si en las horas peak no alcanzas a tocar la pantalla.'}
+          </p>
+        </div>
+        <label className="switch">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={shop.auto_accept}
+            aria-label="Aceptar pedidos automáticamente"
+            onChange={() => patch({ auto_accept: !shop.auto_accept }, shop.auto_accept ? 'Vuelves a aceptar cada pedido a mano' : 'Los pedidos se aceptan solos')}
+          />
+          <span aria-hidden />
+        </label>
       </section>
 
       <form className="card form" onSubmit={save}>
