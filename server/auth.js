@@ -30,17 +30,43 @@ export function destroySession(db, token) {
   if (token) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha(token));
 }
 
+export function destroyUserSessions(db, userId, exceptToken = null) {
+  if (exceptToken) db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').run(userId, sha(exceptToken));
+  else db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+}
+
+export function purgeExpiredSessions(db) {
+  db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(new Date().toISOString());
+}
+
 export function userFromToken(db, token) {
   if (!token) return null;
   const row = db
     .prepare(
-      `SELECT u.id, u.name, u.email, u.role, u.campus_id, u.shop_id, s.expires_at
-       FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`,
+      `SELECT u.id, u.name, u.email, u.role, u.campus_id, u.shop_id, u.institution_id, s.expires_at
+       FROM sessions s JOIN users u ON u.id = s.user_id
+       WHERE s.token_hash = ? AND u.deleted_at IS NULL`,
     )
     .get(sha(token));
   if (!row || row.expires_at < new Date().toISOString()) return null;
   delete row.expires_at;
   return row;
+}
+
+// Contraseñas que aparecen en todas las listas de filtraciones: no se aceptan aunque cumplan el largo.
+const COMMON = new Set([
+  '12345678', '123456789', '1234567890', 'password', 'password1', 'contraseña', 'contrasena', 'qwertyuiop',
+  'qwerty123', '11111111', '00000000', 'abcd1234', 'iloveyou', 'pickgo123', 'duocuc123', 'estudiante',
+]);
+
+/** Devuelve el motivo por el que la contraseña no sirve, o null si es aceptable. */
+export function passwordProblem(password, email = '') {
+  if (typeof password !== 'string' || password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
+  if (password.length > 200) return 'La contraseña es demasiado larga.';
+  if (COMMON.has(password.toLowerCase())) return 'Esa contraseña es muy común. Elige una más difícil de adivinar.';
+  if (email && password.toLowerCase() === email.toLowerCase()) return 'La contraseña no puede ser igual a tu correo.';
+  if (/^(.)\1+$/.test(password)) return 'La contraseña no puede ser un solo carácter repetido.';
+  return null;
 }
 
 export function readCookie(req, name) {

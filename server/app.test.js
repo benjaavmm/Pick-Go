@@ -10,11 +10,13 @@ let clock = new Date('2026-11-13T15:00:00Z');
 let server;
 let base;
 let db;
+const pushed = [];
 
 before(async () => {
   db = openDb(':memory:');
-  seedIfEmpty(db);
-  server = createApp(db, { now: () => clock }).listen(0);
+  seedIfEmpty(db, { now: clock, history: false });
+  const push = { publicKey: 'clave-de-prueba', toUser: (id, p) => pushed.push({ user: id, ...p }), toShop: (id, p) => pushed.push({ shop: id, ...p }) };
+  server = createApp(db, { now: () => clock, push }).listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -25,10 +27,10 @@ after(() => {
 
 function client() {
   let cookie = '';
-  return async (method, path, body) => {
+  return async (method, path, body, headers = {}) => {
     const res = await fetch(base + path, {
       method,
-      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      headers: { 'Content-Type': 'application/json', Cookie: cookie, ...headers },
       body: body ? JSON.stringify(body) : undefined,
     });
     const set = res.headers.get('set-cookie');
@@ -183,7 +185,7 @@ test('no se puede pedir para una hora pasada, productos agotados ni locales en p
   assert.equal((await student('POST', '/api/orders', good)).status, 201);
 });
 
-test('un local nuevo se registra, arma su menú y aparece en la sede', async () => {
+test('un local nuevo queda pendiente hasta que la institución lo aprueba', async () => {
   const c = client();
   const campus = db.prepare("SELECT id FROM campuses WHERE name = 'Sede Valparaíso'").get().id;
   let r = await c('POST', '/api/auth/register-shop', {
@@ -194,16 +196,153 @@ test('un local nuevo se registra, arma su menú y aparece en la sede', async () 
     shopName: 'Kiosko Puerto',
   });
   assert.equal(r.status, 201);
-  assert.equal(r.body.role, 'shop');
+  assert.equal(r.body.shop_status, 'pendiente');
+  const shopId = r.body.shop_id;
   r = await c('POST', '/api/shop/products', { category: 'Snacks', name: 'Sopaipilla', price: 500 });
   assert.equal(r.status, 201);
-  const id = r.body.id;
+  const productId = r.body.id;
   assert.equal((await c('POST', '/api/shop/products', { category: 'Snacks', name: 'Mala', price: -5 })).status, 400);
+  // El dueño ve su menú aunque esté pendiente; los estudiantes todavía no.
+  assert.equal((await c('GET', `/api/shops/${shopId}`)).body.products.length, 1);
+  const student = await login('estudiante@pickgo.cl');
+  assert.equal((await student('GET', `/api/campuses/${campus}/shops`)).body.length, 0);
+  assert.equal((await student('GET', `/api/shops/${shopId}`)).status, 404);
+  r = await student('POST', '/api/orders', { shopId, slot: '2026-11-13T13:00', paymentMethod: 'tarjeta', items: [{ productId, qty: 1 }] });
+  assert.equal(r.status, 404);
+
+  // Solo la administración de esa institución puede aprobarlo.
+  assert.equal((await student('POST', `/api/admin/shops/${shopId}/status`, { status: 'activo' })).status, 403);
+  const otherAdmin = await login('admin2@pickgo.cl');
+  assert.equal((await otherAdmin('POST', `/api/admin/shops/${shopId}/status`, { status: 'activo' })).status, 404);
+  const admin = await login('admin@pickgo.cl');
+  const overview = (await admin('GET', '/api/admin/overview')).body;
+  assert.equal(overview.institution, 'Duoc UC');
+  assert.equal(overview.shops.find((s) => s.id === shopId).status, 'pendiente');
+  assert.ok(overview.totals.orders > 0);
+  assert.ok(!overview.shops.some((s) => s.name === 'Cafetería Central'));
+  assert.equal((await admin('POST', `/api/admin/shops/${shopId}/status`, { status: 'activo' })).status, 200);
+  assert.equal((await student('GET', `/api/campuses/${campus}/shops`)).body.length, 1);
+
+  await c('DELETE', `/api/shop/products/${productId}`);
+  assert.equal((await student('GET', `/api/shops/${shopId}`)).body.products.length, 0);
+  assert.equal((await admin('POST', '/api/admin/campuses', { name: 'Sede Maipú', city: 'Santiago' })).status, 201);
+  assert.equal((await admin('POST', '/api/admin/campuses', { name: 'sede maipú', city: 'Santiago' })).status, 409);
+});
+
+test('cabeceras de seguridad y rechazo de solicitudes desde otros sitios', async () => {
+  const res = await fetch(`${base}/api/config`);
+  assert.match(res.headers.get('content-security-policy'), /default-src 'self'/);
+  assert.match(res.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(res.headers.get('x-frame-options'), 'DENY');
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.equal(res.headers.get('x-powered-by'), null);
 
   const student = await login('estudiante@pickgo.cl');
-  const shops = (await student('GET', `/api/campuses/${campus}/shops`)).body;
-  assert.equal(shops.length, 1);
-  assert.equal((await student('GET', `/api/shops/${shops[0].id}`)).body.products.length, 1);
-  await c('DELETE', `/api/shop/products/${id}`);
-  assert.equal((await student('GET', `/api/shops/${shops[0].id}`)).body.products.length, 0);
+  const body = { name: 'Hackeado' };
+  assert.equal((await student('PATCH', '/api/me', body, { Origin: 'https://sitio-malicioso.example' })).status, 403);
+  assert.equal((await student('PATCH', '/api/me', body, { 'Sec-Fetch-Site': 'cross-site' })).status, 403);
+  assert.equal((await student('GET', '/api/me')).body.name, 'Estudiante Demo');
+  const ok = await student('PATCH', '/api/me', { name: 'Estudiante Demo' }, { Origin: base, 'Sec-Fetch-Site': 'same-origin' });
+  assert.equal(ok.status, 200);
+});
+
+test('la cuenta se bloquea tras varios intentos fallidos y se rechazan contraseñas débiles', async () => {
+  const campus = db.prepare('SELECT id FROM campuses LIMIT 1').get().id;
+  const c = client();
+  for (const password of ['12345678', 'pickgo123', 'aaaaaaaa', 'lola@duocuc.cl']) {
+    const r = await c('POST', '/api/auth/register', { name: 'Lola', email: 'lola@duocuc.cl', password, campusId: campus });
+    assert.equal(r.status, 400, password);
+  }
+  await c('POST', '/api/auth/register', { name: 'Lola', email: 'lola@duocuc.cl', password: 'clave-segura', campusId: campus });
+  const attacker = client();
+  for (let i = 0; i < 8; i++)
+    assert.equal((await attacker('POST', '/api/auth/login', { email: 'lola@duocuc.cl', password: `intento-${i}` })).status, 401);
+  // Bloqueada incluso con la contraseña correcta, hasta que pase la ventana.
+  assert.equal((await attacker('POST', '/api/auth/login', { email: 'lola@duocuc.cl', password: 'clave-segura' })).status, 429);
+});
+
+test('cambiar la contraseña cierra las demás sesiones; eliminar la cuenta borra los datos personales', async () => {
+  const campus = db.prepare('SELECT id FROM campuses LIMIT 1').get().id;
+  const phone = client();
+  const r0 = await phone('POST', '/api/auth/register', { name: 'Pedro Paz', email: 'pedro@duocuc.cl', password: 'clave-segura', campusId: campus });
+  const laptop = client();
+  await laptop('POST', '/api/auth/login', { email: 'pedro@duocuc.cl', password: 'clave-segura' });
+  assert.equal((await phone('POST', '/api/me/password', { current: 'equivocada', next: 'otra-clave-segura' })).status, 403);
+  assert.equal((await phone('POST', '/api/me/password', { current: 'clave-segura', next: 'otra-clave-segura' })).status, 200);
+  assert.equal((await phone('GET', '/api/me')).status, 200);
+  assert.equal((await laptop('GET', '/api/me')).status, 401);
+
+  const exported = (await phone('GET', '/api/me/export')).body;
+  assert.equal(exported.cuenta.email, 'pedro@duocuc.cl');
+  assert.equal((await phone('POST', '/api/me/delete', { password: 'otra-clave-segura' })).status, 200);
+  assert.equal((await phone('GET', '/api/me')).status, 401);
+  assert.equal((await client()('POST', '/api/auth/login', { email: 'pedro@duocuc.cl', password: 'otra-clave-segura' })).status, 401);
+  const row = db.prepare('SELECT name, email FROM users WHERE id = ?').get(r0.body.id);
+  assert.equal(row.name, 'Cuenta eliminada');
+  assert.doesNotMatch(row.email, /pedro/);
+});
+
+test('calificación, puntualidad, pedidos no retirados y avisos push', async () => {
+  const campus = db.prepare('SELECT id FROM campuses LIMIT 1').get().id;
+  const student = client();
+  const me = (await student('POST', '/api/auth/register', { name: 'Sofía Lagos', email: 'sofia@duocuc.cl', password: 'clave-segura', campusId: campus })).body;
+  assert.equal(me.cash_allowed, true);
+  const shopUser = await login('casino@pickgo.cl');
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Casino'").get();
+  const item = [{ productId: productOf(shop.id, 'Menú del día').id, qty: 1 }];
+  const order = async (slot, paymentMethod = 'efectivo') =>
+    (await student('POST', '/api/orders', { shopId: shop.id, slot, paymentMethod, items: item })).body;
+
+  pushed.length = 0;
+  const first = await order('2026-11-13T12:30');
+  assert.equal(pushed.at(-1).shop, shop.id);
+  assert.match(pushed.at(-1).title, /12:30/);
+  assert.equal((await student('POST', `/api/orders/${first.id}/rate`, { rating: 5 })).status, 409);
+  await shopUser('POST', `/api/shop/orders/${first.id}/status`, { status: 'listo' });
+  assert.equal(pushed.at(-1).user, me.id);
+  assert.match(pushed.at(-1).body, /está listo/);
+  // Todavía no pasa la hora de retiro: no se puede marcar como no retirado.
+  assert.equal((await shopUser('POST', `/api/shop/orders/${first.id}/status`, { status: 'no_retirado' })).status, 409);
+  let r = await shopUser('POST', `/api/shop/orders/${first.id}/status`, { status: 'entregado' });
+  assert.equal(r.body.on_time, true);
+  assert.equal((await student('POST', `/api/orders/${first.id}/rate`, { rating: 9 })).status, 400);
+  r = await student('POST', `/api/orders/${first.id}/rate`, { rating: 4, comment: 'Rápido y rico' });
+  assert.equal(r.body.rating, 4);
+  assert.equal((await student('GET', `/api/shops/${shop.id}`)).body.shop.rating, 4);
+
+  // Dos pedidos en efectivo que nadie retira: después se exige pago anticipado.
+  const a = await order('2026-11-13T12:40');
+  const b = await order('2026-11-13T12:50');
+  const real = clock;
+  clock = new Date('2026-11-13T16:30:00Z'); // 13:30 en Chile
+  for (const o of [a, b]) {
+    r = await shopUser('POST', `/api/shop/orders/${o.id}/status`, { status: 'listo' });
+    assert.equal(r.body.on_time, false);
+    assert.equal((await shopUser('POST', `/api/shop/orders/${o.id}/status`, { status: 'no_retirado' })).status, 200);
+  }
+  assert.equal((await student('GET', '/api/me')).body.cash_allowed, false);
+  r = await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T14:00', paymentMethod: 'efectivo', items: item });
+  assert.equal(r.status, 409);
+  assert.equal((await order('2026-11-13T14:00', 'tarjeta')).status, 'recibido');
+
+  const stats = (await shopUser('GET', '/api/shop/stats')).body;
+  assert.equal(stats.totals.no_show, 2);
+  assert.equal(stats.totals.delivered, 1);
+  assert.equal(stats.totals.sales, 4200);
+  assert.equal(stats.totals.on_time_pct, 33);
+  assert.equal(stats.by_day.length, 7);
+  assert.equal(stats.comments[0].comment, 'Rápido y rico');
+  clock = real;
+});
+
+test('las suscripciones push solo aceptan servicios de notificación conocidos', async () => {
+  const student = await login('estudiante@pickgo.cl');
+  const keys = { p256dh: 'BNc'.repeat(20), auth: 'abc123' };
+  for (const endpoint of ['http://fcm.googleapis.com/x', 'https://169.254.169.254/latest', 'https://interno.empresa.cl/push', 'no-es-url'])
+    assert.equal((await student('POST', '/api/push/subscribe', { endpoint, keys })).status, 400, endpoint);
+  assert.equal((await student('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/fcm/send/abc', keys })).status, 201);
+  assert.equal((await student('POST', '/api/push/subscribe', { endpoint: 'https://web.push.apple.com/abc', keys })).status, 201);
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM push_subscriptions').get().c, 2);
+  assert.equal((await client()('POST', '/api/push/subscribe', { endpoint: 'https://fcm.googleapis.com/fcm/send/zzz', keys })).status, 401);
 });

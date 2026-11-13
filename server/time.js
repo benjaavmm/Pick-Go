@@ -58,3 +58,9 @@ export function isOpenNow(shop, now) {
   const { minutes } = chileNow(now);
   return !shop.paused && minutes >= shop.opens && minutes < shop.closes;
 }
+
+/** Instante real convertido a 'AAAA-MM-DDTHH:MM' en hora de Chile, comparable con una franja. */
+export function chileStamp(now = new Date()) {
+  const { date, minutes } = chileNow(now);
+  return `${date}T${hhmm(minutes)}`;
+}

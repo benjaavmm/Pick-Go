@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api, STATUS_LABEL, type Order, type Product, type Shop, type User } from './lib';
 
 export interface CartLine {
@@ -27,6 +28,13 @@ interface Toast {
   kind: 'ok' | 'error' | 'info';
 }
 
+/** 'on': avisos activos · 'off': se pueden activar · 'denied': bloqueados · 'ios-install': hay que instalar la app · 'unsupported' */
+export type PushState = 'on' | 'off' | 'denied' | 'ios-install' | 'unsupported';
+
+interface InstallEvent extends Event {
+  prompt: () => Promise<void>;
+}
+
 interface AppState {
   user: User | null;
   loading: boolean;
@@ -42,6 +50,10 @@ interface AppState {
   replaceCart: (cart: Cart) => void;
   clearCart: () => void;
   toast: (text: string, kind?: Toast['kind']) => void;
+  push: PushState;
+  enablePush: () => Promise<void>;
+  canInstall: boolean;
+  install: () => void;
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -65,7 +77,10 @@ export function useOrderEvents(handler: (e: OrderEvent) => void) {
 function loadCart(): Cart {
   try {
     const raw = localStorage.getItem(CART_KEY);
-    if (raw) return JSON.parse(raw) as Cart;
+    if (raw) {
+      const c = JSON.parse(raw) as Cart;
+      if (Array.isArray(c.lines)) return c;
+    }
   } catch {
     /* almacenamiento no disponible */
   }
@@ -74,52 +89,97 @@ function loadCart(): Cart {
 
 function beep() {
   try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
+    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new AC();
     const gain = ctx.createGain();
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.connect(ctx.destination);
+    [880, 1175].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      osc.start(ctx.currentTime + i * 0.16);
+      osc.stop(ctx.currentTime + i * 0.16 + 0.15);
+    });
+    gain.gain.setValueAtTime(0.14, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.5);
-    osc.onended = () => void ctx.close();
+    setTimeout(() => void ctx.close(), 700);
   } catch {
     /* el navegador bloqueó el audio */
   }
 }
 
-function systemNotify(title: string, body: string) {
-  try {
-    if ('Notification' in window && Notification.permission === 'granted' && document.hidden)
-      new Notification(title, { body, icon: '/icon.svg' });
-  } catch {
-    /* sin soporte de notificaciones */
-  }
+// ---------- notificaciones push ----------
+const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () =>
+  window.matchMedia('(display-mode: standalone)').matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
+
+function keyBytes(key: string) {
+  const b64 = (key + '='.repeat((4 - (key.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+async function currentSubscription() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  const reg = await navigator.serviceWorker.getRegistration();
+  return reg ? reg.pushManager.getSubscription() : null;
+}
+
+async function detectPush(): Promise<PushState> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window))
+    return isIos() && !isStandalone() ? 'ios-install' : 'unsupported';
+  if (Notification.permission === 'denied') return 'denied';
+  if (Notification.permission === 'granted' && (await currentSubscription())) return 'on';
+  return 'off';
+}
+
+async function subscribePush(key: string) {
+  const reg = await navigator.serviceWorker.ready;
+  const sub =
+    (await reg.pushManager.getSubscription()) ??
+    (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }));
+  await api('/push/subscribe', 'POST', sub.toJSON());
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [demo, setDemo] = useState(false);
+  const [config, setConfig] = useState<{ demo: boolean; push_key: string | null }>({ demo: false, push_key: null });
   const [cart, setCart] = useState<Cart>(loadCart);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [push, setPush] = useState<PushState>('unsupported');
+  const [installEvent, setInstallEvent] = useState<InstallEvent | null>(null);
 
   const toast = useCallback((text: string, kind: Toast['kind'] = 'info') => {
     const id = Date.now() + Math.random();
-    setToasts((t) => [...t.slice(-2), { id, text, kind }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 5000);
+    setToasts((t) => [...t.slice(-1), { id, text, kind }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
 
   useEffect(() => {
-    api<{ demo: boolean }>('/config')
-      .then((c) => setDemo(c.demo))
+    api<{ demo: boolean; push_key: string | null }>('/config')
+      .then(setConfig)
       .catch(() => {});
     api<User>('/me')
       .then(setUser)
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
-  }, []);
+    const onInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallEvent(e as InstallEvent);
+    };
+    window.addEventListener('beforeinstallprompt', onInstall);
+    // Al tocar una notificación, el service worker pide abrir el pedido dentro de la app.
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === 'navigate' && typeof e.data.url === 'string' && e.data.url.startsWith('/')) navigate(e.data.url);
+    };
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onInstall);
+      navigator.serviceWorker?.removeEventListener('message', onMessage);
+    };
+  }, [navigate]);
 
   useEffect(() => {
     try {
@@ -133,38 +193,86 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const userId = user?.id;
   const role = user?.role;
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || role === 'admin') return;
     const es = new EventSource('/api/events');
     es.addEventListener('order', (ev) => {
       const detail = JSON.parse((ev as MessageEvent<string>).data) as OrderEvent;
       const o = detail.order;
       if (role === 'shop') {
         if (detail.type === 'new') {
-          const text = `Nuevo pedido ${o.code} para las ${o.slot.slice(11)}`;
-          toast(text, 'ok');
+          toast(`Nuevo pedido ${o.code} para las ${o.slot.slice(11)}`, 'ok');
           beep();
-          systemNotify('Nuevo pedido', text);
-        } else if (o.status === 'cancelado') {
-          toast(`El pedido ${o.code} fue cancelado`, 'info');
-        }
-      } else if (o.status !== 'recibido') {
+        } else if (o.status === 'cancelado') toast(`El pedido ${o.code} fue cancelado`, 'info');
+      } else if (o.status !== 'recibido' && o.status !== 'entregado') {
         const text =
           o.status === 'listo'
-            ? `Tu pedido ${o.code} está listo. Pasa a retirarlo en ${o.shop_name}.`
+            ? `Tu pedido ${o.code} está listo. Pasa a retirarlo.`
             : o.status === 'cancelado'
-              ? `Tu pedido ${o.code} en ${o.shop_name} fue cancelado.`
+              ? `${o.shop_name} canceló tu pedido ${o.code}.`
               : `Pedido ${o.code}: ${STATUS_LABEL[o.status].toLowerCase()}.`;
-        toast(text, o.status === 'cancelado' ? 'error' : 'ok');
+        toast(text, o.status === 'cancelado' || o.status === 'no_retirado' ? 'error' : 'ok');
         if (o.status === 'listo') {
           beep();
           navigator.vibrate?.([200, 100, 200]);
         }
-        systemNotify('Pick&Go', text);
       }
       window.dispatchEvent(new CustomEvent('pickgo:order', { detail }));
     });
-    return () => es.close();
+    // Tras recuperar la conexión o volver a la app, las pantallas recargan sus datos.
+    const refresh = () => window.dispatchEvent(new Event('pickgo:refresh'));
+    let wasDown = false;
+    es.onerror = () => {
+      wasDown = true;
+    };
+    es.onopen = () => {
+      if (wasDown) refresh();
+      wasDown = false;
+    };
+    const onVisible = () => document.visibilityState === 'visible' && refresh();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', refresh);
+    return () => {
+      es.close();
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', refresh);
+    };
   }, [userId, role, toast]);
+
+  // Si ya había permiso de notificaciones, la suscripción se asocia sola a la cuenta que entra.
+  const pushKey = config.push_key;
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      let state = await detectPush().catch((): PushState => 'unsupported');
+      if (userId && pushKey && state === 'off' && Notification.permission === 'granted') {
+        await subscribePush(pushKey)
+          .then(() => (state = 'on'))
+          .catch(() => {});
+      } else if (userId && pushKey && state === 'on') {
+        await subscribePush(pushKey).catch(() => {});
+      }
+      if (alive) setPush(state);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [userId, pushKey]);
+
+  const enablePush = useCallback(async () => {
+    if (!pushKey) return toast('Los avisos no están disponibles en este momento.', 'error');
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        setPush(perm === 'denied' ? 'denied' : 'off');
+        return;
+      }
+      await subscribePush(pushKey);
+      setPush('on');
+      toast('Avisos activados', 'ok');
+    } catch {
+      toast('No pudimos activar los avisos en este dispositivo.', 'error');
+    }
+  }, [pushKey, toast]);
 
   const value = useMemo<AppState>(() => {
     const cartCount = cart.lines.reduce((n, l) => n + l.qty, 0);
@@ -172,9 +280,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return {
       user,
       loading,
-      demo,
+      demo: config.demo,
       setUser,
       logout: async () => {
+        // Este dispositivo deja de recibir avisos de la cuenta que sale.
+        const sub = await currentSubscription().catch(() => null);
+        if (sub) {
+          await api('/push/unsubscribe', 'POST', { endpoint: sub.endpoint }).catch(() => {});
+          await sub.unsubscribe().catch(() => {});
+        }
         await api('/auth/logout', 'POST').catch(() => {});
         setUser(null);
         setCart(EMPTY_CART);
@@ -187,7 +301,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (other && !window.confirm(`Tu carrito tiene productos de ${cart.shopName}. ¿Vaciarlo y pedir en ${shop.name}?`))
           return false;
         setCart((c) => {
-          const base = other || c.shopId !== shop.id ? { shopId: shop.id, shopName: shop.name, lines: [] } : c;
+          const base = c.shopId !== shop.id ? { shopId: shop.id, shopName: shop.name, lines: [] } : c;
           const found = base.lines.find((l) => l.productId === product.id);
           const lines = found
             ? base.lines.map((l) => (l.productId === product.id ? { ...l, qty: Math.min(20, l.qty + 1) } : l))
@@ -209,8 +323,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       replaceCart: setCart,
       clearCart: () => setCart(EMPTY_CART),
       toast,
+      push,
+      enablePush,
+      canInstall: !!installEvent,
+      install: () => {
+        void installEvent?.prompt();
+        setInstallEvent(null);
+      },
     };
-  }, [user, loading, demo, cart, toast]);
+  }, [user, loading, config.demo, cart, toast, push, enablePush, installEvent]);
 
   return (
     <Ctx.Provider value={value}>
@@ -226,7 +347,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** Carga datos, expone estado de carga y error, y permite recargar. */
+/** Carga datos, expone estado de carga y error, y recarga sola al volver a la app o recuperar conexión. */
 export function useLoad<T>(loader: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -243,5 +364,18 @@ export function useLoad<T>(loader: () => Promise<T>, deps: unknown[]) {
   }, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(reload, deps);
+  useEffect(() => {
+    window.addEventListener('pickgo:refresh', reload);
+    return () => window.removeEventListener('pickgo:refresh', reload);
+  }, [reload]);
   return { data, error, reload, setData };
+}
+
+/** Vuelve a dibujar cada cierto tiempo, para cuentas regresivas. */
+export function useTick(ms = 20000) {
+  const [, set] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => set((n) => n + 1), ms);
+    return () => clearInterval(t);
+  }, [ms]);
 }
