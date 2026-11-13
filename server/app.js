@@ -438,6 +438,12 @@ export function createApp(
   };
   const daysOf = (req) => (Number(req.query.days) === 30 ? 30 : 7);
 
+  // Chequeo de salud para el servicio de hosting.
+  app.get('/healthz', (_req, res) => {
+    db.prepare('SELECT 1').get();
+    res.json({ ok: true });
+  });
+
   // ---------- público ----------
   app.get('/api/config', (_req, res) => {
     res.json({ demo, push_key: push?.publicKey ?? null });
@@ -654,6 +660,21 @@ export function createApp(
   app.get('/api/shops/:id/slots', auth, (req, res) => {
     const shop = visibleShop(req, Number(req.params.id));
     res.json(shop.status === 'activo' ? buildSlots(shop, now(), slotCounts(shop.id)) : []);
+  });
+
+  // Búsqueda de productos en los locales activos de una sede, sin distinguir tildes ni mayúsculas.
+  const plain = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  app.get('/api/campuses/:id/search', auth, (req, res) => {
+    const q = plain(String(req.query.q ?? '').trim().slice(0, 40));
+    if (q.length < 2) return res.json([]);
+    const rows = db
+      .prepare(
+        `SELECT p.id, p.name, p.description, p.price, p.emoji, p.category, s.id AS shop_id, s.name AS shop_name
+         FROM products p JOIN shops s ON s.id = p.shop_id
+         WHERE s.campus_id = ? AND s.status = 'activo' AND p.deleted = 0 AND p.available = 1`,
+      )
+      .all(Number(req.params.id));
+    res.json(rows.filter((r) => plain(`${r.name} ${r.category} ${r.description}`).includes(q)).slice(0, 20));
   });
 
   // ---------- estudiante: pedidos ----------

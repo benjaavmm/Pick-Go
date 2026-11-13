@@ -1,8 +1,8 @@
-import { BellRing, ChevronRight, Download, FileDown, KeyRound, LogOut, ShieldCheck, Smartphone, Trash2 } from 'lucide-react';
+import { BellRing, ChevronRight, CircleHelp, Download, FileDown, KeyRound, LogOut, Palette, ShieldCheck, Smartphone, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, errorText } from '../lib';
-import { useApp } from '../state';
+import { useApp, type Theme } from '../state';
 import { Sheet } from '../ui';
 import { PasswordInput } from './auth';
 
@@ -123,7 +123,7 @@ function DeleteForm() {
 
 /** Ajustes de cuenta comunes a estudiantes, locales e instituciones. */
 export function AccountSettings({ notifyText }: { notifyText?: string }) {
-  const { user, logout, toast, canInstall, install } = useApp();
+  const { user, logout, toast, canInstall, install, theme, setTheme } = useApp();
   const [sheet, setSheet] = useState<null | 'password' | 'delete'>(null);
 
   const logoutAll = async () => {
@@ -153,8 +153,31 @@ export function AccountSettings({ notifyText }: { notifyText?: string }) {
         </section>
       )}
 
+      <section className="card setting">
+        <span className="setting-icon" aria-hidden>
+          <Palette size={20} />
+        </span>
+        <div className="grow stack">
+          <strong>Apariencia</strong>
+          <div className="segmented themes" role="group" aria-label="Apariencia">
+            {(['claro', 'oscuro', 'auto'] as Theme[]).map((t) => (
+              <button key={t} className={theme === t ? 'on' : ''} aria-pressed={theme === t} onClick={() => setTheme(t)}>
+                {t === 'claro' ? 'Claro' : t === 'oscuro' ? 'Oscuro' : 'Automático'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <h2 className="section">Seguridad y privacidad</h2>
       <div className="card menu">
+        {user!.role === 'student' && (
+          <Link to="/ayuda">
+            <CircleHelp size={20} aria-hidden />
+            Ayuda y preguntas frecuentes
+            <ChevronRight size={18} aria-hidden />
+          </Link>
+        )}
         <button onClick={() => setSheet('password')}>
           <KeyRound size={20} aria-hidden />
           Cambiar contraseña

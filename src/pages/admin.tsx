@@ -1,4 +1,4 @@
-import { Building2, Check, LayoutDashboard, MapPin, Plus, Store, UserCog, Ban } from 'lucide-react';
+import { Building2, Check, FileDown, LayoutDashboard, MapPin, Plus, Store, UserCog, Ban } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { NavLink, Outlet, useOutletContext } from 'react-router-dom';
 import { api, errorText, money, moneyShort, shortDay, type AdminShop, type Overview } from '../lib';
@@ -87,6 +87,36 @@ function Filters() {
   );
 }
 
+/** Descarga la tabla de locales como CSV, para informes de la institución. */
+function downloadCsv(shops: AdminShop[], data: Overview) {
+  const cell = (v: string | number | null) => {
+    // Las celdas que parten con =, +, - o @ se anteponen con ' para que la planilla no las ejecute como fórmula.
+    const t = String(v ?? '').replace(/^([=+\-@])/, "'$1");
+    return `"${t.replace(/"/g, '""')}"`;
+  };
+  const rows = [
+    ['Local', 'Sede', 'Pedidos', 'Entregados', 'Cancelados', 'No retirados', 'A tiempo (%)', 'Calificación', 'Ventas (CLP)'],
+    ...shops.map((s) => [
+      s.name,
+      s.campus_name,
+      s.totals.orders,
+      s.totals.delivered,
+      s.totals.cancelled,
+      s.totals.no_show,
+      s.totals.on_time_pct,
+      s.totals.rating,
+      s.totals.sales,
+    ]),
+  ];
+  const csv = '\ufeff' + rows.map((r) => r.map(cell).join(';')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pickgo-locales-${data.from}-a-${data.to}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function AdminOverview() {
   const { data, days } = useAdmin();
   const t = data.totals;
@@ -142,7 +172,14 @@ export function AdminOverview() {
         </section>
       </div>
       <section className="card">
-        <h2>Locales activos</h2>
+        <div className="panel-title">
+          <h2>Locales activos</h2>
+          {ranked.length > 0 && (
+            <button className="btn btn-soft btn-sm" onClick={() => downloadCsv(ranked, data)}>
+              <FileDown size={18} aria-hidden /> Descargar CSV
+            </button>
+          )}
+        </div>
         {ranked.length === 0 ? (
           <p className="muted">Todavía no hay locales activos.</p>
         ) : (

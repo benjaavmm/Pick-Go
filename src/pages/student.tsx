@@ -10,13 +10,14 @@ import {
   Plus,
   Receipt,
   RotateCcw,
+  Search,
   ShoppingBag,
   Store,
   TriangleAlert,
   User as UserIcon,
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom';
 import {
   api,
@@ -100,6 +101,15 @@ function LiveTicket({ o }: { o: Order }) {
   );
 }
 
+interface SearchHit {
+  id: number;
+  name: string;
+  price: number;
+  emoji: string;
+  shop_id: number;
+  shop_name: string;
+}
+
 // ---------- Inicio: locales de la sede ----------
 export function Home() {
   const { user } = useApp();
@@ -110,6 +120,24 @@ export function Home() {
   useTick();
   const active = (orders.data ?? []).filter((o) => isActive(o.status));
   const last = (orders.data ?? []).find((o) => o.status === 'entregado');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SearchHit[] | null>(null);
+  const searching = query.trim().length >= 2;
+  useEffect(() => {
+    if (!searching) return;
+    setResults(null);
+    let alive = true;
+    // Espera a que la persona deje de escribir antes de consultar.
+    const t = setTimeout(() => {
+      api<SearchHit[]>(`/campuses/${campusId}/search?q=${encodeURIComponent(query.trim())}`)
+        .then((r) => alive && setResults(r))
+        .catch(() => alive && setResults([]));
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [query, searching, campusId]);
 
   // Primero los locales donde se puede retirar antes.
   const sorted = useMemo(
@@ -145,7 +173,47 @@ export function Home() {
         </section>
       )}
 
-      {last && active.length === 0 && (
+      <label className="search">
+        <Search size={20} aria-hidden />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Busca un producto: café, almuerzo…"
+          aria-label="Buscar productos en tu sede"
+          maxLength={40}
+          enterKeyHint="search"
+        />
+      </label>
+      {searching && (
+        <section className="stack" aria-live="polite">
+          {results === null ? (
+            <Loading />
+          ) : results.length === 0 ? (
+            <p className="muted center">No encontramos «{query.trim()}» en los locales de tu sede.</p>
+          ) : (
+            <ul className="list">
+              {results.map((r) => (
+                <li key={r.id}>
+                  <Link to={`/local/${r.shop_id}`} className="card product">
+                    <span className="tile" aria-hidden>
+                      {r.emoji}
+                    </span>
+                    <span className="grow">
+                      <strong>{r.name}</strong>
+                      <span className="muted">{r.shop_name}</span>
+                      <span className="price">{money(r.price)}</span>
+                    </span>
+                    <ChevronRight size={18} aria-hidden />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {!searching && last && active.length === 0 && (
         <Link to={`/pedidos/${last.id}`} className="card again">
           <RotateCcw size={20} aria-hidden />
           <span className="grow">
@@ -158,7 +226,7 @@ export function Home() {
         </Link>
       )}
 
-      <h2 className="section">Locales en tu sede</h2>
+      {!searching && <h2 className="section">Locales en tu sede</h2>}
       {shops.error && <ErrorBox text={shops.error} retry={shops.reload} />}
       {!shops.data && !shops.error && <Loading />}
       {shops.data?.length === 0 && (
@@ -168,7 +236,7 @@ export function Home() {
           text="Si conoces un local, cuéntale que puede sumarse gratis desde la pantalla de ingreso."
         />
       )}
-      <ul className="list">
+      <ul className="list" hidden={searching}>
         {sorted.map((s) => {
           const soon = s.next_slot && s.next_slot.day === 'hoy';
           return (
@@ -803,6 +871,16 @@ export function OrderDetail() {
 export function Profile() {
   const { user, setUser, toast } = useApp();
   const [campusId, setCampusId] = useState(String(user!.campus_id ?? ''));
+  const [name, setName] = useState(user!.name);
+  const saveName = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      setUser(await api<User>('/me', 'PATCH', { name }));
+      toast('Nombre actualizado', 'ok');
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+  };
 
   const changeCampus = async (v: string) => {
     setCampusId(v);
@@ -827,6 +905,15 @@ export function Profile() {
           <span className="muted">{user!.email}</span>
         </div>
       </section>
+      <form className="field" onSubmit={saveName}>
+        <label htmlFor="profile-name">Tu nombre (así te ve el local)</label>
+        <div className="inline-form">
+          <input id="profile-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} autoComplete="name" required />
+          <button className="btn btn-dark" disabled={name.trim() === user!.name || !name.trim()}>
+            Guardar
+          </button>
+        </div>
+      </form>
       <label className="field">
         Tu sede
         <CampusSelect value={campusId} onChange={changeCampus} />

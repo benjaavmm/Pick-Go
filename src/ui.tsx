@@ -200,3 +200,33 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     );
   }
 }
+
+/** Pantalla de carga: una mano entra por la izquierda, toma la bolsa y se la lleva por la derecha. */
+export function Splash() {
+  return (
+    <div className="splash" role="status" aria-label="Cargando Pick and Go">
+      <Logo size="lg" />
+      <svg className="grab" viewBox="0 0 300 180" aria-hidden>
+        <line className="grab-floor" x1="40" y1="165" x2="260" y2="165" />
+        <ellipse className="grab-shadow" cx="150" cy="165" rx="52" ry="6" />
+        <g className="grab-bag">
+          <path className="grab-line" d="M128 86 C128 46 172 46 172 86" />
+          <path className="grab-lime" d="M108 84 H192 L186 152 a10 10 0 0 1 -10 9 H124 a10 10 0 0 1 -10 -9 Z" />
+          <path className="grab-line" d="M136 122 l10 10 l19 -22" />
+        </g>
+        <g className="grab-hand">
+          <rect className="grab-ink" x="-60" y="38" width="172" height="30" rx="15" />
+          <rect className="grab-skin" x="104" y="36" width="20" height="34" rx="6" />
+          <path className="grab-skin" d="M124 40 H150 a14 14 0 0 1 14 14 v2 a14 14 0 0 1 -14 14 H124 Z" />
+          <path className="grab-skin" d="M134 58 v14 a6 6 0 0 0 12 0 v-14" />
+          <path className="grab-skin" d="M146 58 v14 a6 6 0 0 0 12 0 v-14" />
+        </g>
+      </svg>
+      <p className="splash-text">
+        Cargando<i>.</i>
+        <i>.</i>
+        <i>.</i>
+      </p>
+    </div>
+  );
+}

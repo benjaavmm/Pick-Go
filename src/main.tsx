@@ -5,24 +5,32 @@ import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AdminAccount, AdminCampuses, AdminLayout, AdminOverview, AdminShops } from './pages/admin';
-import { Login, Privacy, Register, RegisterShop } from './pages/auth';
+import { Help, Login, Privacy, Register, RegisterShop } from './pages/auth';
 import { ShopLayout, ShopMenu, ShopOrders, ShopSettings, ShopStatsPage } from './pages/shop';
 import { Checkout, Home, OrderDetail, Orders, Profile, ShopPage, StudentLayout } from './pages/student';
-import { AppProvider, useApp } from './state';
-import { ErrorBoundary, Logo } from './ui';
+import { AppProvider, applyTheme, useApp } from './state';
+import { ErrorBoundary, Logo, Splash } from './ui';
+import { WifiOff } from 'lucide-react';
 import './styles.css';
 
 function Routing() {
-  const { user, loading } = useApp();
+  const { user, loading, offline, retry } = useApp();
   const { pathname } = useLocation();
   // Cada pantalla parte arriba, también al entrar o salir de la cuenta.
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname, user?.id]);
-  if (loading)
+  if (loading) return <Splash />;
+  if (offline)
     return (
-      <div className="splash">
-        <Logo size="xl" />
+      <div className="splash crash">
+        <Logo size="lg" />
+        <WifiOff size={40} aria-hidden />
+        <h1>Sin conexión</h1>
+        <p>No pudimos conectar con Pick&amp;Go. Revisa tu internet; tu sesión sigue abierta.</p>
+        <button className="btn btn-primary" onClick={retry}>
+          Reintentar
+        </button>
       </div>
     );
   if (!user)
@@ -69,6 +77,7 @@ function Routing() {
         <Route path="/pedidos" element={<Orders />} />
         <Route path="/pedidos/:id" element={<OrderDetail />} />
         <Route path="/perfil" element={<Profile />} />
+        <Route path="/ayuda" element={<Help />} />
         <Route path="/privacidad" element={<Privacy back="/perfil" />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -80,6 +89,8 @@ function Routing() {
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => void navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }
+
+applyTheme();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

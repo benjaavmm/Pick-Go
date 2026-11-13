@@ -1,0 +1,15 @@
+# Publica Pick&Go en Render (https://render.com) con un clic desde este repositorio.
+# El plan gratuito no guarda datos entre reinicios: vuelve a los datos de demostración.
+services:
+  - type: web
+    name: pick-go
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: TRUST_PROXY
+        value: 1

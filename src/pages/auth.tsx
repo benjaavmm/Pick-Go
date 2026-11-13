@@ -365,6 +365,34 @@ export function RegisterShop() {
   );
 }
 
+const FAQ: [string, string][] = [
+  ['¿Cómo funciona Pick&Go?', 'Eliges un local de tu sede, armas tu pedido y escoges a qué hora lo retiras. El local lo recibe al instante y lo prepara para esa hora. Cuando está listo te avisamos; llegas, muestras tu código y te lo llevas.'],
+  ['¿Con cuánta anticipación tengo que pedir?', 'Cada local define cuánto necesita para preparar. La app solo te muestra las horas que todavía alcanzan, partiendo por la más cercana. También puedes dejar pedido para mañana.'],
+  ['¿Por qué una hora aparece como "Lleno"?', 'Cada local acepta una cantidad limitada de pedidos cada 10 minutos, para poder tenerlos todos a tiempo. Si una hora se llenó, elige la siguiente.'],
+  ['¿Cómo retiro mi pedido?', 'Abre el pedido en la app y muestra el código QR o el código de seis caracteres. El local lo escanea o lo escribe y te entrega tu pedido.'],
+  ['¿Puedo cancelar?', 'Sí, mientras el local no haya empezado a prepararlo. Después de eso ya no se puede cancelar desde la app.'],
+  ['¿Qué pasa si no retiro un pedido?', 'El local lo marca como no retirado. Si acumulas dos en 30 días, el pago en efectivo se desactiva por un tiempo y tendrás que pagar al momento de pedir.'],
+  ['¿Cómo pago?', 'Puedes elegir tarjeta, tarjeta JUNAEB o efectivo al retirar. En esta versión de demostración los pagos con tarjeta son simulados: no se hace ningún cobro real.'],
+  ['No me llegan los avisos', 'Actívalos en tu perfil. En iPhone primero debes agregar Pick&Go a tu pantalla de inicio y abrirla desde ahí. Con la app abierta, los avisos llegan siempre.'],
+  ['¿Cómo instalo la app?', 'En Android, abre el menú del navegador y elige "Instalar app" o "Agregar a pantalla de inicio". En iPhone, toca Compartir y luego "Agregar a inicio".'],
+];
+
+export function Help() {
+  return (
+    <main className="page">
+      <TopBar title="Ayuda" back="/perfil" />
+      <div className="faq">
+        {FAQ.map(([q, a]) => (
+          <details key={q} className="card">
+            <summary>{q}</summary>
+            <p>{a}</p>
+          </details>
+        ))}
+      </div>
+    </main>
+  );
+}
+
 export function Privacy({ back = '/' }: { back?: string }) {
   return (
     <main className="page prose">

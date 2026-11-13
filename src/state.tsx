@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, STATUS_LABEL, type Order, type Product, type Shop, type User } from './lib';
+import { api, ApiError, STATUS_LABEL, type Order, type Product, type Shop, type User } from './lib';
 
 export interface CartLine {
   productId: number;
@@ -31,6 +31,28 @@ interface Toast {
 /** 'on': avisos activos · 'off': se pueden activar · 'denied': bloqueados · 'ios-install': hay que instalar la app · 'unsupported' */
 export type PushState = 'on' | 'off' | 'denied' | 'ios-install' | 'unsupported';
 
+export type Theme = 'claro' | 'oscuro' | 'auto';
+const THEME_KEY = 'pickgo.theme';
+/** La pantalla de carga se muestra al menos este tiempo, para que la animación se vea completa. */
+const SPLASH_MS = 2000;
+
+function storedTheme(): Theme {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    if (t === 'oscuro' || t === 'auto') return t;
+  } catch {
+    /* almacenamiento no disponible */
+  }
+  return 'claro';
+}
+
+/** Aplica el tema al documento. El claro es el predeterminado; el oscuro solo si la persona lo elige. */
+export function applyTheme(theme: Theme = storedTheme()) {
+  const dark = theme === 'oscuro' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0c0f0b' : '#e6f7ac');
+}
+
 interface InstallEvent extends Event {
   prompt: () => Promise<void>;
 }
@@ -38,6 +60,13 @@ interface InstallEvent extends Event {
 interface AppState {
   user: User | null;
   loading: boolean;
+  /** No se pudo contactar al servidor al abrir la app. */
+  offline: boolean;
+  retry: () => void;
+  /** El dispositivo tiene conexión a internet. */
+  online: boolean;
+  theme: Theme;
+  setTheme: (t: Theme) => void;
   demo: boolean;
   setUser: (u: User | null) => void;
   logout: () => Promise<void>;
@@ -144,7 +173,10 @@ async function subscribePush(key: string) {
 export function AppProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [boot, setBoot] = useState<'loading' | 'ready' | 'offline'>('loading');
+  const [online, setOnline] = useState(navigator.onLine);
+  const [theme, setThemeState] = useState<Theme>(storedTheme);
+  const first = useRef(true);
   const [config, setConfig] = useState<{ demo: boolean; push_key: string | null }>({ demo: false, push_key: null });
   const [cart, setCart] = useState<Cart>(loadCart);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -157,14 +189,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
 
+  const loadMe = useCallback(() => {
+    setBoot('loading');
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const minimum = new Promise((r) => setTimeout(r, first.current && !reduced ? SPLASH_MS : 0));
+    first.current = false;
+    void api<User>('/me')
+      .then((u): 'ready' => {
+        setUser(u);
+        return 'ready';
+      })
+      .catch((e) => {
+        // Solo un 401 significa "sin sesión". Un corte de red no debe verse como si te hubieran sacado de la cuenta.
+        if (e instanceof ApiError && e.status === 401) {
+          setUser(null);
+          return 'ready' as const;
+        }
+        return 'offline' as const;
+      })
+      .then(async (state) => {
+        await minimum;
+        setBoot(state);
+      });
+  }, []);
+
   useEffect(() => {
     api<{ demo: boolean; push_key: string | null }>('/config')
       .then(setConfig)
       .catch(() => {});
-    api<User>('/me')
-      .then(setUser)
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+    loadMe();
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
     const onInstall = (e: Event) => {
       e.preventDefault();
       setInstallEvent(e as InstallEvent);
@@ -178,8 +235,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener('beforeinstallprompt', onInstall);
       navigator.serviceWorker?.removeEventListener('message', onMessage);
+      window.removeEventListener('online', up);
+      window.removeEventListener('offline', down);
     };
-  }, [navigate]);
+  }, [navigate, loadMe]);
+
+  // Si la app abrió sin conexión, reintenta sola cuando vuelve la señal.
+  useEffect(() => {
+    if (online && boot === 'offline') loadMe();
+  }, [online, boot, loadMe]);
+
+  useEffect(() => {
+    applyTheme(theme);
+    if (theme !== 'auto') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => applyTheme('auto');
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, [theme]);
 
   useEffect(() => {
     try {
@@ -279,7 +352,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const cartTotal = cart.lines.reduce((n, l) => n + l.qty * l.price, 0);
     return {
       user,
-      loading,
+      loading: boot === 'loading',
+      offline: boot === 'offline',
+      retry: loadMe,
+      online,
+      theme,
+      setTheme: (t) => {
+        try {
+          localStorage.setItem(THEME_KEY, t);
+        } catch {
+          /* almacenamiento no disponible */
+        }
+        setThemeState(t);
+      },
       demo: config.demo,
       setUser,
       logout: async () => {
@@ -331,10 +416,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setInstallEvent(null);
       },
     };
-  }, [user, loading, config.demo, cart, toast, push, enablePush, installEvent]);
+  }, [user, boot, loadMe, online, theme, config.demo, cart, toast, push, enablePush, installEvent]);
 
   return (
     <Ctx.Provider value={value}>
+      {!online && boot === 'ready' && (
+        <div className="offline-bar" role="status">
+          Sin conexión. Lo que ves puede estar desactualizado.
+        </div>
+      )}
       {children}
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
