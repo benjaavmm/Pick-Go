@@ -131,7 +131,7 @@ function createLimiter() {
 export function createApp(
   db,
   // Los topes por IP son amplios a propósito: en una sede todos los celulares salen por la misma red.
-  { demo = true, now = () => new Date(), distDir = null, push = null, ipLimit = 6000, authIpLimit = 300 } = {},
+  { demo = true, now = () => new Date(), distDir = null, push = null, mail = null, ipLimit = 6000, authIpLimit = 300 } = {},
 ) {
   const app = express();
   const hub = createHub();
@@ -313,7 +313,7 @@ export function createApp(
   const STUDENT_PUSH = {
     preparando: (o) => `${o.shop_name} aceptó tu pedido y lo está preparando.`,
     listo: (o) => `Tu pedido ${o.code} está listo. Pasa a retirarlo en ${o.shop_name}.`,
-    cancelado: (o) => `Tu pedido ${o.code} en ${o.shop_name} fue cancelado.`,
+    cancelado: (o) => `${o.shop_name} canceló tu pedido ${o.code}${o.cancel_reason ? `: ${o.cancel_reason}` : '.'}`,
   };
 
   const setStatus = (order, status, { paid = order.paid, by = 'shop' } = {}) => {
@@ -473,7 +473,7 @@ export function createApp(
 
   // ---------- público ----------
   app.get('/api/config', (_req, res) => {
-    res.json({ demo, push_key: push?.publicKey ?? null });
+    res.json({ demo, push_key: push?.publicKey ?? null, mail: !!mail });
   });
 
   app.get('/api/images/:id', (req, res) => {
@@ -539,6 +539,17 @@ export function createApp(
       db.exec('ROLLBACK');
       throw e;
     }
+    for (const admin of db
+      .prepare(
+        `SELECT u.email FROM users u JOIN campuses c ON c.institution_id = u.institution_id
+         WHERE c.id = ? AND u.role = 'admin' AND u.deleted_at IS NULL`,
+      )
+      .all(campusId))
+      sendMail({
+        to: admin.email,
+        subject: `Nuevo local por aprobar: ${shopName}`,
+        text: `${shopName} se registró en Pick&Go y espera tu aprobación para aparecer a los estudiantes.\n\nRevísalo aquí: ${mail?.link('/institucion/locales')}\n\nPick&Go`,
+      });
     startSession(req, res, id);
     res.status(201).json(userOut(id));
   });
@@ -557,6 +568,53 @@ export function createApp(
     limiter.clear(key);
     startSession(req, res, u.id);
     res.json(userOut(u.id));
+  });
+
+  // Recuperar la contraseña por correo. Solo existe si el servidor tiene configurado el envío de correos.
+  const sendMail = (message) => {
+    mail?.send(message).catch((e) => console.warn('No se pudo enviar un correo:', e.message));
+  };
+  const sha256 = (t) => crypto.createHash('sha256').update(t).digest('hex');
+
+  app.post('/api/auth/forgot', authLimit, (req, res) => {
+    if (!mail) fail(503, 'La recuperación por correo no está disponible. Pide ayuda a tu institución.');
+    const email = emailOf(req.body?.email);
+    // La respuesta es la misma exista o no la cuenta: así nadie puede averiguar quién está registrado.
+    const ok = { ok: true };
+    if (limiter.hit(`forgot|${email}`, 3, 3600_000)) return res.json(ok);
+    const u = db.prepare('SELECT id, name FROM users WHERE email = ? AND deleted_at IS NULL').get(email);
+    if (!u) return res.json(ok);
+    const token = crypto.randomBytes(32).toString('base64url');
+    db.prepare('DELETE FROM password_resets WHERE user_id = ? OR expires_at < ?').run(u.id, now().toISOString());
+    db.prepare('INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?,?,?)').run(
+      sha256(token),
+      u.id,
+      new Date(now().getTime() + 30 * 60000).toISOString(),
+    );
+    sendMail({
+      to: email,
+      subject: 'Recupera tu contraseña de Pick&Go',
+      text: `Hola, ${u.name}:\n\nPara elegir una contraseña nueva abre este enlace. Vale por 30 minutos y se puede usar una sola vez.\n\n${mail.link(`/restablecer?token=${token}`)}\n\nSi no pediste esto, ignora este correo: tu contraseña sigue igual.\n\nPick&Go`,
+    });
+    res.json(ok);
+  });
+
+  app.post('/api/auth/reset', authLimit, (req, res) => {
+    const token = typeof req.body?.token === 'string' ? req.body.token : '';
+    const row = db
+      .prepare(
+        `SELECT r.user_id, u.email FROM password_resets r JOIN users u ON u.id = r.user_id
+         WHERE r.token_hash = ? AND r.expires_at > ? AND u.deleted_at IS NULL`,
+      )
+      .get(sha256(token), now().toISOString());
+    if (!row) fail(400, 'El enlace ya no sirve. Pide uno nuevo desde «Olvidé mi contraseña».');
+    const password = passwordOf(req.body?.password, row.email);
+    db.prepare('UPDATE users SET pass_hash = ? WHERE id = ?').run(hashPassword(password), row.user_id);
+    db.prepare('DELETE FROM password_resets WHERE user_id = ?').run(row.user_id);
+    // Quien conocía la contraseña anterior pierde el acceso en todos los dispositivos.
+    destroyUserSessions(db, row.user_id);
+    limiter.clear(`login|${row.email}`);
+    res.json({ ok: true });
   });
 
   app.post('/api/auth/logout', (req, res) => {
@@ -845,6 +903,12 @@ export function createApp(
     res.json(shopOut(myShop(req)));
   });
 
+  const daysOfWeek = (v) => {
+    const set = [...new Set(String(v))].filter((d) => /^[0-6]$/.test(d)).sort();
+    if (set.length === 0) fail(400, 'Elige al menos un día de atención.');
+    return set.join('');
+  };
+
   app.patch('/api/shop/me', shopOnly, (req, res) => {
     const s = myShop(req);
     const b = req.body ?? {};
@@ -859,10 +923,11 @@ export function createApp(
       slot_capacity: b.slot_capacity !== undefined ? int(b.slot_capacity, 1, 100, 'El cupo por franja') : s.slot_capacity,
       paused: b.paused !== undefined ? (b.paused ? 1 : 0) : s.paused,
       auto_accept: b.auto_accept !== undefined ? (b.auto_accept ? 1 : 0) : s.auto_accept,
+      days: b.days !== undefined ? daysOfWeek(b.days) : s.days,
     };
     if (next.closes <= next.opens) fail(400, 'La hora de cierre debe ser posterior a la de apertura.');
     db.prepare(
-      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?
+      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?
        WHERE id=?`,
     ).run(
       next.name,
@@ -875,6 +940,7 @@ export function createApp(
       next.slot_capacity,
       next.paused,
       next.auto_accept,
+      next.days,
       s.id,
     );
     res.json(shopOut(getShop(s.id)));
@@ -889,6 +955,37 @@ export function createApp(
       )
       .all(req.user.shop_id, today);
     res.json({ today, orders: rows.map(orderOut) });
+  });
+
+  // Detalle de pedidos del período en CSV, para la contabilidad del local.
+  app.get('/api/shop/orders.csv', shopOnly, (req, res) => {
+    const today = chileNow(now()).date;
+    const from = addDays(today, -(daysOf(req) - 1));
+    const rows = db
+      .prepare(`${ORDER_SELECT} WHERE o.shop_id = ? AND substr(o.slot, 1, 10) BETWEEN ? AND ? ORDER BY o.slot, o.id`)
+      .all(req.user.shop_id, from, today)
+      .map(orderOut);
+    // Las celdas que parten con =, +, - o @ se anteponen con ' para que la planilla no las ejecute como fórmula.
+    const cell = (v) => `"${String(v ?? '').replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"`;
+    const STATUS = { recibido: 'Por aceptar', preparando: 'En preparación', listo: 'Listo', entregado: 'Entregado', cancelado: 'Cancelado', no_retirado: 'No retirado' };
+    const lines = [
+      ['Fecha', 'Hora de retiro', 'Código', 'Cliente', 'Productos', 'Total (CLP)', 'Estado', 'Calificación'],
+      ...rows.map((o) => [
+        o.slot.slice(0, 10),
+        o.slot.slice(11),
+        o.code,
+        o.customer_name,
+        o.items.map((i) => `${i.qty}x ${i.name}${i.options.length ? ` (${i.options.map((c) => c.name).join(', ')})` : ''}`).join(' + '),
+        o.total,
+        STATUS[o.status] ?? o.status,
+        o.rating ?? '',
+      ]),
+    ];
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="pickgo-pedidos-${from}-a-${today}.csv"`,
+    });
+    res.send('\ufeff' + lines.map((l) => l.map(cell).join(';')).join('\r\n'));
   });
 
   app.get('/api/shop/stats', shopOnly, (req, res) => {
@@ -912,7 +1009,11 @@ export function createApp(
     const o = shopOrder(req, Number(req.params.id));
     const status = req.body?.status;
     if (!(o.status in RANK) || o.status === 'entregado') fail(409, 'Ese pedido ya está cerrado.');
-    if (status === 'cancelado') return res.json(setStatus(o, 'cancelado', { paid: false }));
+    if (status === 'cancelado') {
+      const reason = str(req.body?.reason, 120, 'El motivo', { required: false });
+      db.prepare('UPDATE orders SET cancel_reason = ? WHERE id = ?').run(reason, o.id);
+      return res.json(setStatus(o, 'cancelado', { paid: false }));
+    }
     if (status === 'no_retirado') {
       if (o.status !== 'listo') fail(409, 'Solo un pedido listo se puede marcar como no retirado.');
       if (chileStamp(now()) <= o.slot) fail(409, 'Todavía no pasa la hora de retiro de este pedido.');
@@ -1119,6 +1220,15 @@ export function createApp(
       url: '/panel',
       tag: 'shop-status',
     });
+    for (const u of db.prepare("SELECT email FROM users WHERE shop_id = ? AND role = 'shop' AND deleted_at IS NULL").all(shop.id))
+      sendMail({
+        to: u.email,
+        subject: status === 'activo' ? `${shop.name} ya está activo en Pick&Go` : `${shop.name} fue suspendido en Pick&Go`,
+        text:
+          status === 'activo'
+            ? `¡Listo! ${shop.name} fue aprobado y ya aparece para los estudiantes.\n\nEntra a tu panel: ${mail?.link('/panel')}\n\nPick&Go`
+            : `${shop.name} fue suspendido por la institución y dejó de aparecer para los estudiantes. Contacta a su administración para más información.\n\nPick&Go`,
+      });
     res.json({ ok: true, status });
   });
 

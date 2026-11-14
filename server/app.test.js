@@ -15,12 +15,14 @@ let server;
 let base;
 let db;
 const pushed = [];
+const mails = [];
 
 before(async () => {
   db = openDb(':memory:');
   seedIfEmpty(db, { now: clock, history: false });
   const push = { publicKey: 'clave-de-prueba', toUser: (id, p) => pushed.push({ user: id, ...p }), toShop: (id, p) => pushed.push({ shop: id, ...p }) };
-  server = createApp(db, { now: () => clock, push }).listen(0);
+  const mail = { link: (p) => `https://pickgo.test${p}`, send: async (m) => void mails.push(m) };
+  server = createApp(db, { now: () => clock, push, mail }).listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -41,6 +43,7 @@ function client() {
     if (set) cookie = set.split(';')[0];
     return { status: res.status, body: await res.json() };
   };
+  call.cookie = () => cookie;
   call.raw = async (path, bytes, type) => {
     const res = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': type, Cookie: cookie }, body: bytes });
     return { status: res.status, body: await res.json() };
@@ -473,13 +476,17 @@ test('una base de la versión 3 se actualiza sin perder datos', () => {
   const old = new DatabaseSync(file);
   old.exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);
             CREATE TABLE shops (id INTEGER PRIMARY KEY, name TEXT NOT NULL, paused INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE orders (id INTEGER PRIMARY KEY, total INTEGER);
+            INSERT INTO orders (total) VALUES (4500);
             INSERT INTO shops (name, paused) VALUES ('Kiosko antiguo', 1);
             PRAGMA user_version = 3;`);
   old.close();
   const migrated = openDb(file);
   assert.equal(migrated.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
-  const row = migrated.prepare('SELECT name, paused, auto_accept FROM shops').get();
-  assert.deepEqual({ ...row }, { name: 'Kiosko antiguo', paused: 1, auto_accept: 0 });
+  const row = migrated.prepare('SELECT name, paused, auto_accept, days FROM shops').get();
+  assert.deepEqual({ ...row }, { name: 'Kiosko antiguo', paused: 1, auto_accept: 0, days: '0123456' });
+  assert.deepEqual({ ...migrated.prepare('SELECT total, cancel_reason FROM orders').get() }, { total: 4500, cancel_reason: '' });
+  assert.equal(migrated.prepare('SELECT COUNT(*) AS c FROM password_resets').get().c, 0);
   migrated.close();
   // Una base anterior a la primera versión migrable no se toca: se rechaza para apartarla.
   const ancient = path.join(path.dirname(file), 'v2.db');
@@ -487,4 +494,73 @@ test('una base de la versión 3 se actualiza sin perder datos', () => {
   a.exec('CREATE TABLE users (id INTEGER PRIMARY KEY); PRAGMA user_version = 2;');
   a.close();
   assert.throws(() => openDb(ancient), { code: 'PICKGO_OLD_DB' });
+});
+
+test('recuperar la contraseña por correo: enlace de un solo uso que vence', async () => {
+  const campus = db.prepare('SELECT id FROM campuses LIMIT 1').get().id;
+  const c = client();
+  await c('POST', '/api/auth/register', { name: 'Olvido', email: 'olvido@duocuc.cl', password: 'clave-original-1', campusId: campus });
+  mails.length = 0;
+  // Misma respuesta exista o no la cuenta, y sin correo para la que no existe.
+  assert.deepEqual((await client()('POST', '/api/auth/forgot', { email: 'nadie@duocuc.cl' })).body, { ok: true });
+  assert.equal(mails.length, 0);
+  assert.deepEqual((await client()('POST', '/api/auth/forgot', { email: 'OLVIDO@duocuc.cl' })).body, { ok: true });
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0].to, 'olvido@duocuc.cl');
+  const token = mails[0].text.match(/https:\/\/pickgo\.test\/restablecer\?token=([\w-]+)/)[1];
+  // El token no queda guardado tal cual en la base.
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM password_resets WHERE token_hash = ?').get(token).c, 0);
+
+  assert.equal((await client()('POST', '/api/auth/reset', { token: 'inventado', password: 'otra-clave-nueva-1' })).status, 400);
+  assert.equal((await client()('POST', '/api/auth/reset', { token, password: '12345678' })).status, 400);
+  assert.equal((await client()('POST', '/api/auth/reset', { token, password: 'otra-clave-nueva-1' })).status, 200);
+  assert.equal((await c('GET', '/api/me')).status, 401);
+  assert.equal((await client()('POST', '/api/auth/login', { email: 'olvido@duocuc.cl', password: 'clave-original-1' })).status, 401);
+  assert.equal((await client()('POST', '/api/auth/login', { email: 'olvido@duocuc.cl', password: 'otra-clave-nueva-1' })).status, 200);
+  // Un solo uso.
+  assert.equal((await client()('POST', '/api/auth/reset', { token, password: 'tercera-clave-nueva-1' })).status, 400);
+
+  // Un enlace vencido no sirve.
+  await client()('POST', '/api/auth/forgot', { email: 'olvido@duocuc.cl' });
+  const second = mails.at(-1).text.match(/token=([\w-]+)/)[1];
+  const real = clock;
+  clock = new Date(real.getTime() + 31 * 60000);
+  assert.equal((await client()('POST', '/api/auth/reset', { token: second, password: 'tercera-clave-nueva-1' })).status, 400);
+  clock = real;
+  // Tope de solicitudes por cuenta: no se puede usar para llenar de correos a alguien.
+  const before = mails.length;
+  for (let i = 0; i < 5; i++) await client()('POST', '/api/auth/forgot', { email: 'olvido@duocuc.cl' });
+  assert.ok(mails.length - before <= 1);
+});
+
+test('días de atención, motivo al rechazar y exportación de pedidos', async () => {
+  const shopUser = await login('casino@pickgo.cl');
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Casino'").get();
+  const student = await login('estudiante@pickgo.cl');
+  // El 13 de noviembre de 2026 es viernes (5) y el 14, sábado (6).
+  assert.equal((await shopUser('PATCH', '/api/shop/me', { days: '' })).status, 400);
+  let r = await shopUser('PATCH', '/api/shop/me', { days: '12345' });
+  assert.equal(r.body.days, '12345');
+  let slots = (await student('GET', `/api/shops/${shop.id}/slots`)).body;
+  assert.ok(slots.length > 0 && slots.every((s) => s.day === 'hoy'));
+  r = await shopUser('PATCH', '/api/shop/me', { days: '6' });
+  slots = (await student('GET', `/api/shops/${shop.id}/slots`)).body;
+  assert.ok(slots.length > 0 && slots.every((s) => s.day === 'manana'));
+  assert.equal(r.body.is_open, false);
+  await shopUser('PATCH', '/api/shop/me', { days: '0123456' });
+
+  const item = [{ productId: productOf(shop.id, 'Menú del día').id, qty: 1 }];
+  const o = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T15:00', items: item })).body;
+  pushed.length = 0;
+  r = await shopUser('POST', `/api/shop/orders/${o.id}/status`, { status: 'cancelado', reason: 'Se nos acabó el menú del día' });
+  assert.equal(r.body.cancel_reason, 'Se nos acabó el menú del día');
+  assert.match(pushed.at(-1).body, /Se nos acabó el menú del día/);
+  assert.equal((await student('GET', `/api/orders/${o.id}`)).body.cancel_reason, 'Se nos acabó el menú del día');
+
+  const res = await fetch(`${base}/api/shop/orders.csv`, { headers: { Cookie: shopUser.cookie() } });
+  assert.match(res.headers.get('content-type'), /text\/csv/);
+  const csv = await res.text();
+  assert.match(csv, /"Fecha";"Hora de retiro";"Código"/);
+  assert.match(csv, new RegExp(`"${o.code}";"Estudiante Demo";"1x Menú del día";"4200";"Cancelado"`));
+  assert.equal((await fetch(`${base}/api/shop/orders.csv`, { headers: { Cookie: student.cookie() } })).status, 403);
 });

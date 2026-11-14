@@ -31,7 +31,10 @@ Así no pierdes en la fila los 10 minutos que tienes para comer.
 - Tablero en vivo con los pedidos ordenados por hora de retiro y aviso sonoro al entrar uno nuevo.
 - Un botón por paso: empezar a preparar, avisar que está listo y entregar. Se entrega escaneando el QR con la cámara
   o escribiendo el código.
-- Cada pedido nuevo se acepta o se rechaza; el estudiante se entera al instante.
+- Cada pedido nuevo se acepta o se rechaza con un motivo; el estudiante se entera al instante. También hay
+  aceptación automática.
+- Tablero pensado para una tablet en el mostrador: la pantalla no se apaga y la alerta suena hasta aceptar.
+- Días de atención por local, impresión de comandas y descarga de pedidos en CSV.
 - Menú editable con foto, ícono y opciones por producto (todos opcionales), horarios, cupo por franja,
   anticipación mínima y pausa de pedidos.
 - Métricas: ventas, puntualidad, calificación, demanda por hora, productos más pedidos y opiniones.
@@ -97,6 +100,13 @@ y con HTTPS o en `localhost`.
 | `PICKGO_DB` | `data/pickgo.db` | Archivo de la base de datos SQLite |
 | `PICKGO_DEMO` | activado | Con `0` arranca sin datos ni cuentas de demostración |
 | `PICKGO_OWNER_EMAIL` y `PICKGO_OWNER_PASSWORD` | sin definir | Crean la cuenta de plataforma al arrancar, si no existe |
+| `PICKGO_SMTP_URL` | sin definir | Servidor de correo, por ejemplo `smtps://usuario:clave@smtp.proveedor.com` |
+| `PICKGO_MAIL_FROM` | sin definir | Remitente, por ejemplo `Pick&Go <no-responder@tudominio.cl>` |
+| `PICKGO_PUBLIC_URL` | sin definir | Dirección pública de la app, para los enlaces de los correos |
+
+Con las tres variables de correo definidas se activan la recuperación de contraseña por correo y los avisos a la
+institución (local nuevo por aprobar) y al local (aprobado o suspendido). Sin ellas, la app funciona igual y la
+plataforma recupera accesos con contraseñas temporales.
 | `TRUST_PROXY` | sin definir | Defínela si el servidor queda detrás de un proxy con HTTPS |
 | `PICKGO_VAPID_SUBJECT` | `mailto:soporte@example.com` | Contacto del operador que exigen los servicios de push; usa uno real en producción |
 
@@ -112,6 +122,9 @@ y con HTTPS o en `localhost`.
 
 La base de datos es un archivo SQLite (`PICKGO_DB`). Cada día se guarda una copia en la carpeta `respaldos`, junto
 a la base, y se conservan las últimas siete. Guarda ese archivo en un disco que no se borre.
+
+También hay un `Dockerfile` para correrla en cualquier servicio de contenedores; la base vive en `/data`, donde hay
+que montar un volumen persistente.
 
 ## Publicarla
 
@@ -146,8 +159,8 @@ Lo que falta o conviene saber antes de operar a gran escala:
 
 - **La app no cobra.** Se pide en la app y se paga en el local. Integrar pagos (por ejemplo Webpay) requiere
   credenciales de comercio.
-- **No hay verificación de correo ni recuperación de contraseña por correo.** Ambas necesitan un servicio de envío
-  de correos. Mientras tanto, la plataforma puede generar una contraseña temporal para cualquier cuenta.
+- **No se verifica que el correo sea del estudiante** al registrarse. La recuperación de contraseña por correo ya
+  existe, pero requiere configurar un servicio de envío (SMTP).
 - **Las notificaciones push no se han probado en dispositivos reales**, y la app no se ha probado en iPhone ni
   Safari; las pruebas automáticas corren en Chromium.
 - **En iPhone los avisos push exigen instalar la app** en la pantalla de inicio (requisito de iOS).

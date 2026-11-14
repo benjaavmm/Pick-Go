@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { hashPassword, passwordProblem, purgeExpiredSessions } from './auth.js';
 import { openDb } from './db.js';
+import { createMailer } from './mail.js';
 import { createPush } from './push.js';
 import { seedIfEmpty } from './seed.js';
 
@@ -67,6 +68,8 @@ purgeExpiredSessions(db);
 setInterval(() => purgeExpiredSessions(db), 3600_000).unref();
 
 const port = Number(process.env.PORT ?? 3001);
-createApp(db, { demo, distDir: path.join(root, 'dist'), push: createPush(db) }).listen(port, () => {
+const mail = createMailer();
+console.log(mail ? 'Envío de correos: activado.' : 'Envío de correos: desactivado (faltan PICKGO_SMTP_URL, PICKGO_MAIL_FROM o PICKGO_PUBLIC_URL).');
+createApp(db, { demo, distDir: path.join(root, 'dist'), push: createPush(db), mail }).listen(port, () => {
   console.log(`Pick&Go escuchando en http://localhost:${port}`);
 });

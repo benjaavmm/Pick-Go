@@ -1,6 +1,6 @@
 import { BellRing, Clock, Eye, EyeOff, GraduationCap, ShieldCheck, ShoppingBag, Store, Building2 } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, errorText, type Campus, type User } from '../lib';
 import { useApp, useLoad } from '../state';
 import { Logo, TopBar } from '../ui';
@@ -120,7 +120,7 @@ function useSubmit(action: () => Promise<User>) {
 }
 
 export function Login() {
-  const { demo, setUser } = useApp();
+  const { demo, mail, setUser } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const { error, busy, submit } = useSubmit(() => api<User>('/auth/login', 'POST', { email, password }));
@@ -164,6 +164,12 @@ export function Login() {
         </button>
         <p className="form-foot">
           ¿Primera vez? <Link to="/registro">Crea tu cuenta</Link>
+          {mail && (
+            <>
+              <br />
+              <Link to="/recuperar">Olvidé mi contraseña</Link>
+            </>
+          )}
         </p>
       </form>
 
@@ -196,7 +202,7 @@ export function Login() {
       <p className="auth-links">
         ¿Tienes un local en una sede? <Link to="/registro-local">Súmalo a Pick&amp;Go</Link>
         <br />
-        <Link to="/privacidad">Privacidad y seguridad</Link>
+        <Link to="/privacidad">Privacidad y seguridad</Link> · <Link to="/condiciones">Condiciones de uso</Link>
       </p>
     </AuthShell>
   );
@@ -246,7 +252,8 @@ export function Register() {
           {busy ? 'Creando…' : 'Crear cuenta'}
         </button>
         <p className="form-foot">
-          Al crear tu cuenta aceptas el uso de tus datos descrito en <Link to="/privacidad">Privacidad</Link>.
+          Al crear tu cuenta aceptas las <Link to="/condiciones">Condiciones de uso</Link> y el uso de tus datos descrito en{' '}
+          <Link to="/privacidad">Privacidad</Link>.
           <br />
           ¿Ya tienes cuenta? <Link to="/">Ingresa</Link>
         </p>
@@ -366,6 +373,152 @@ export function RegisterShop() {
         </p>
       </form>
     </AuthShell>
+  );
+}
+
+export function Forgot() {
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await api('/auth/forgot', 'POST', { email });
+      setSent(true);
+    } catch (err) {
+      setError(errorText(err));
+    }
+    setBusy(false);
+  };
+  return (
+    <AuthShell>
+      {sent ? (
+        <section className="card form">
+          <h2>Revisa tu correo</h2>
+          <p>
+            Si hay una cuenta con <strong>{email}</strong>, te enviamos un enlace para elegir una contraseña nueva. Vale por
+            30 minutos.
+          </p>
+          <p className="muted">¿No llega? Mira en la carpeta de correo no deseado.</p>
+          <Link to="/" className="btn btn-primary btn-block">
+            Volver a ingresar
+          </Link>
+        </section>
+      ) : (
+        <form className="card form" onSubmit={submit}>
+          <h2>Recupera tu contraseña</h2>
+          <p className="muted">Escribe el correo de tu cuenta y te enviaremos un enlace para elegir una contraseña nueva.</p>
+          <label>
+            Correo
+            <input type="email" inputMode="email" autoComplete="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </label>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          <button className="btn btn-primary btn-block" disabled={busy}>
+            {busy ? 'Enviando…' : 'Enviar enlace'}
+          </button>
+          <p className="form-foot">
+            <Link to="/">Volver a ingresar</Link>
+          </p>
+        </form>
+      )}
+    </AuthShell>
+  );
+}
+
+export function ResetPassword() {
+  const { toast } = useApp();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const token = params.get('token') ?? '';
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await api('/auth/reset', 'POST', { token, password });
+      toast('Contraseña cambiada. Ya puedes ingresar.', 'ok');
+      navigate('/', { replace: true });
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <AuthShell>
+      <form className="card form" onSubmit={submit}>
+        <h2>Elige una contraseña nueva</h2>
+        <label>
+          Contraseña nueva
+          <PasswordInput value={password} onChange={setPassword} autoComplete="new-password" minLength={8} />
+          <small>Mínimo 8 caracteres. Al cambiarla se cierran tus sesiones abiertas.</small>
+        </label>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        <button className="btn btn-primary btn-block" disabled={busy || !token}>
+          Guardar contraseña
+        </button>
+        <p className="form-foot">
+          <Link to="/recuperar">Pedir un enlace nuevo</Link>
+        </p>
+      </form>
+    </AuthShell>
+  );
+}
+
+export function Terms({ back = '/' }: { back?: string }) {
+  return (
+    <main className="page prose">
+      <TopBar title="Condiciones de uso" back={back} />
+      <section className="card">
+        <h2>Qué es Pick&amp;Go</h2>
+        <p>
+          Pick&amp;Go conecta a estudiantes con los locales de su sede para pedir por adelantado y retirar a una hora
+          acordada. Pick&amp;Go no vende ni prepara los productos: cada local es responsable de lo que ofrece, de sus
+          precios y de la calidad de lo que entrega.
+        </p>
+      </section>
+      <section className="card">
+        <h2>Si eres estudiante</h2>
+        <ul>
+          <li>Un pedido confirmado es un compromiso de retirarlo y pagarlo en el local a la hora que elegiste.</li>
+          <li>Puedes cancelar mientras el local no lo haya aceptado.</li>
+          <li>Si acumulas tres pedidos sin retirar en 30 días, tu cuenta no podrá hacer pedidos nuevos por un tiempo.</li>
+          <li>Tu cuenta es personal: no la compartas ni la uses para pedir a nombre de otra persona.</li>
+        </ul>
+      </section>
+      <section className="card">
+        <h2>Si tienes un local</h2>
+        <ul>
+          <li>Mantén tu menú, precios, horarios y disponibilidad al día.</li>
+          <li>Acepta solo los pedidos que puedas tener listos a la hora de retiro, y avisa cuando estén listos.</li>
+          <li>El cobro lo haces tú, en tu local, al entregar el pedido.</li>
+          <li>La institución puede suspender un local que no cumpla.</li>
+        </ul>
+      </section>
+      <section className="card">
+        <h2>Uso correcto</h2>
+        <p>
+          No uses la app para pedidos falsos, para suplantar a otra persona ni para intentar acceder a datos ajenos. Podemos
+          suspender las cuentas que lo hagan.
+        </p>
+        <p className="muted small">
+          Este texto resume las reglas de uso del servicio durante su etapa piloto y puede actualizarse.
+        </p>
+      </section>
+    </main>
   );
 }
 

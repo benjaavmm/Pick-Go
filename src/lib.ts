@@ -35,6 +35,8 @@ export interface Shop {
   slot_capacity: number;
   paused: boolean;
   auto_accept: boolean;
+  /** Días que atiende: dígitos de 0 (domingo) a 6 (sábado). */
+  days: string;
   status: ShopStatus;
   rating: number | null;
   ratings: number;
@@ -87,6 +89,7 @@ export interface Order {
   note: string;
   rating: number | null;
   rating_comment: string;
+  cancel_reason: string;
   on_time: boolean | null;
   created_at: string;
   shop_name: string;

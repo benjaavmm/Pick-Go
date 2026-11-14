@@ -4,10 +4,12 @@ import {
   ChartColumn,
   ClipboardList,
   Hourglass,
+  FileDown,
   Pause,
   Pencil,
   Play,
   Plus,
+  Printer,
   ScanLine,
   Settings,
   Star,
@@ -190,16 +192,61 @@ function eta(slot: string) {
   return { text: slotLabel(slot), late: false };
 }
 
-function OrderCard({ o, onMove }: { o: Order; onMove: (o: Order, to: Status) => void }) {
+const REASONS = ['Se agotó un producto', 'No alcanzamos a tenerlo a esa hora', 'Estamos cerrando'];
+
+/** Al rechazar o cancelar, el local elige un motivo: el estudiante lo ve y sabe qué hacer. */
+function RejectSheet({ o, onClose, onConfirm }: { o: Order; onClose: () => void; onConfirm: (reason: string) => void }) {
+  const [reason, setReason] = useState(REASONS[0]);
+  const [other, setOther] = useState('');
+  const custom = reason === '';
+  return (
+    <Sheet title={`${o.status === 'recibido' ? 'Rechazar' : 'Cancelar'} pedido ${o.code}`} onClose={onClose}>
+      <p className="muted">Le avisaremos a {o.customer_name} con el motivo.</p>
+      <div className="stack" role="radiogroup" aria-label="Motivo">
+        {[...REASONS, ''].map((r) => (
+          <button key={r} type="button" role="radio" aria-checked={reason === r} className={`opt-choice ${reason === r ? 'on' : ''}`} onClick={() => setReason(r)}>
+            <span className="grow">{r || 'Otro motivo'}</span>
+          </button>
+        ))}
+      </div>
+      {custom && (
+        <input value={other} onChange={(e) => setOther(e.target.value)} maxLength={120} placeholder="Escribe el motivo" aria-label="Otro motivo" autoFocus />
+      )}
+      <button className="btn btn-danger btn-block" disabled={custom && !other.trim()} onClick={() => onConfirm(custom ? other.trim() : reason)}>
+        {o.status === 'recibido' ? 'Rechazar pedido' : 'Cancelar pedido'}
+      </button>
+    </Sheet>
+  );
+}
+
+/** Imprime la comanda de un pedido en la impresora que tenga el equipo. */
+function printOrder(id: number) {
+  const card = document.querySelector(`.ticket-card[data-order="${id}"]`);
+  if (!card) return;
+  document.body.classList.add('printing');
+  card.classList.add('print-me');
+  const done = () => {
+    document.body.classList.remove('printing');
+    card.classList.remove('print-me');
+    window.removeEventListener('afterprint', done);
+  };
+  window.addEventListener('afterprint', done);
+  window.print();
+}
+
+function OrderCard({ o, onMove, onReject }: { o: Order; onMove: (o: Order, to: Status) => void; onReject: (o: Order) => void }) {
   const next = NEXT[o.status];
   const when = eta(o.slot);
   const noShow = o.status === 'listo' && minutesUntil(o.slot) <= -10;
   return (
-    <article className="ticket-card">
+    <article className="ticket-card" data-order={o.id}>
       <header>
         <b className="slot-time">{o.slot.slice(11)}</b>
         <span className={`eta ${when.late ? 'late' : ''}`}>{when.text}</span>
         <span className="code-chip">{o.code}</span>
+        <button className="icon-btn no-print" aria-label={`Imprimir comanda ${o.code}`} onClick={() => printOrder(o.id)}>
+          <Printer size={18} />
+        </button>
       </header>
       <p className="customer">{o.customer_name}</p>
       <ul className="lines">
@@ -230,13 +277,7 @@ function OrderCard({ o, onMove }: { o: Order; onMove: (o: Order, to: Status) => 
             No vino
           </button>
         ) : (
-          <button
-            className="btn btn-ghost"
-            onClick={() =>
-              window.confirm(`¿${o.status === 'recibido' ? 'Rechazar' : 'Cancelar'} el pedido ${o.code} de ${o.customer_name}? Le avisaremos.`) &&
-              onMove(o, 'cancelado')
-            }
-          >
+          <button className="btn btn-ghost" onClick={() => onReject(o)}>
             {o.status === 'recibido' ? 'Rechazar' : 'Cancelar'}
           </button>
         )}
@@ -283,9 +324,10 @@ export function ShopOrders() {
     return () => clearInterval(t);
   }, [sound, waiting]);
 
-  const move = async (o: Order, to: Status) => {
+  const [rejecting, setRejecting] = useState<Order | null>(null);
+  const move = async (o: Order, to: Status, reason?: string) => {
     try {
-      await api(`/shop/orders/${o.id}/status`, 'POST', { status: to });
+      await api(`/shop/orders/${o.id}/status`, 'POST', { status: to, reason });
       if (to === 'listo') toast(`Avisamos a ${o.customer_name} que su pedido está listo`, 'ok');
     } catch (e) {
       toast(errorText(e), 'error');
@@ -372,7 +414,7 @@ export function ShopOrders() {
             </h2>
             {by(c.status).length === 0 && <p className="muted">{c.empty}</p>}
             {by(c.status).map((o) => (
-              <OrderCard key={o.id} o={o} onMove={move} />
+              <OrderCard key={o.id} o={o} onMove={move} onReject={setRejecting} />
             ))}
           </section>
         ))}
@@ -391,6 +433,16 @@ export function ShopOrders() {
             ))}
           </ul>
         </details>
+      )}
+      {rejecting && (
+        <RejectSheet
+          o={rejecting}
+          onClose={() => setRejecting(null)}
+          onConfirm={(reason) => {
+            void move(rejecting, 'cancelado', reason);
+            setRejecting(null);
+          }}
+        />
       )}
       {scanning && (
         <Scanner
@@ -436,7 +488,12 @@ export function ShopStatsPage() {
     <main className="panel-body">
       <div className="panel-title">
         <h1>Métricas</h1>
-        <RangeToggle days={days} onChange={setDays} />
+        <div className="filters">
+          <a className="btn btn-soft btn-sm" href={`/api/shop/orders.csv?days=${days}`} download>
+            <FileDown size={18} aria-hidden /> Descargar pedidos
+          </a>
+          <RangeToggle days={days} onChange={setDays} />
+        </div>
       </div>
       <div className="kpis">
         <Kpi label="Ventas entregadas" value={moneyShort(t.sales)} hint={`Ticket promedio ${money(t.avg_ticket)}`} tone="accent" />
@@ -827,6 +884,8 @@ export function ShopMenu() {
 }
 
 // ---------- Ajustes ----------
+const WEEK: [string, string][] = [['1', 'Lun'], ['2', 'Mar'], ['3', 'Mié'], ['4', 'Jue'], ['5', 'Vie'], ['6', 'Sáb'], ['0', 'Dom']];
+
 export function ShopSettings() {
   const { toast } = useApp();
   const { data: shop, setData } = useLoad(() => api<Shop>('/shop/me'), []);
@@ -840,6 +899,8 @@ export function ShopSettings() {
     prep_minutes: string;
     slot_capacity: string;
   }>(null);
+
+  const [daysDraft, setDaysDraft] = useState<string | null>(null);
 
   useEffect(() => {
     if (shop && !f)
@@ -856,6 +917,8 @@ export function ShopSettings() {
   }, [shop, f]);
 
   if (!shop || !f) return <main className="panel-body narrow"><Loading /></main>;
+  const days = daysDraft ?? shop.days;
+  const setDays = setDaysDraft;
   const set = (k: keyof typeof f) => (v: string) => setF({ ...f, [k]: v });
 
   const patch = async (body: object, ok: string) => {
@@ -878,6 +941,7 @@ export function ShopSettings() {
         closes: toMinutes(f.closes),
         prep_minutes: Number(f.prep_minutes),
         slot_capacity: Number(f.slot_capacity),
+        days,
       },
       'Ajustes guardados',
     );
@@ -954,6 +1018,19 @@ export function ShopSettings() {
             <small>Tiempo que necesitas para preparar un pedido.</small>
           </label>
         </div>
+        <fieldset className="days">
+          <legend>Días que atiendes</legend>
+          {WEEK.map(([d, label]) => (
+            <label key={d} className={`day ${days.includes(d) ? 'on' : ''}`}>
+              <input
+                type="checkbox"
+                checked={days.includes(d)}
+                onChange={() => setDays(days.includes(d) ? days.replace(d, '') : [...days, d].sort().join(''))}
+              />
+              {label}
+            </label>
+          ))}
+        </fieldset>
         <h2>Datos del local</h2>
         <div className="form-row">
           <label className="w-emoji">

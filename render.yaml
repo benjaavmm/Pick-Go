@@ -8,6 +8,8 @@
 #   2. Quita el `#` de las variables PICKGO_DB y PICKGO_DEMO.
 #   3. En el panel de Render define PICKGO_OWNER_EMAIL y PICKGO_OWNER_PASSWORD (tu cuenta de plataforma)
 #      y PICKGO_VAPID_SUBJECT (por ejemplo mailto:tu-correo@dominio.cl). No las escribas en este archivo.
+#   4. Para el correo (recuperar contraseñas y avisos), define también PICKGO_SMTP_URL, PICKGO_MAIL_FROM
+#      y PICKGO_PUBLIC_URL (la dirección https://… que te da Render).
 services:
   - type: web
     name: pick-go
@@ -32,4 +34,10 @@ services:
       - key: PICKGO_OWNER_EMAIL
         sync: false
       - key: PICKGO_OWNER_PASSWORD
+        sync: false
+      - key: PICKGO_SMTP_URL
+        sync: false
+      - key: PICKGO_MAIL_FROM
+        sync: false
+      - key: PICKGO_PUBLIC_URL
         sync: false

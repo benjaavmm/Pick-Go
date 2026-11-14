@@ -2740,3 +2740,72 @@ th.num {
   text-align: left;
   font: inherit;
 }
+
+.days {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.days legend {
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin-bottom: 6px;
+  padding: 0;
+}
+.day {
+  display: grid;
+  place-items: center;
+  min-width: 52px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 13px;
+  font-weight: 800;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.day.on {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 2px solid var(--outline);
+}
+.day input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+}
+.day:focus-within {
+  outline: 3px solid var(--info);
+  outline-offset: 2px;
+}
+
+/* Impresión de comandas: solo el pedido elegido, en negro sobre blanco. */
+@media print {
+  body.printing * {
+    visibility: hidden;
+  }
+  body.printing .print-me,
+  body.printing .print-me * {
+    visibility: visible;
+    color: #000 !important;
+  }
+  body.printing .print-me {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 72mm;
+    box-shadow: none;
+    background: #fff;
+  }
+  body.printing .no-print,
+  body.printing .ticket-actions,
+  body.printing .panel-nav,
+  body.printing .toasts {
+    display: none !important;
+  }
+}

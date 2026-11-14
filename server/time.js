@@ -38,7 +38,10 @@ export function buildSlots(shop, now, counts = new Map()) {
   if (shop.paused) return [];
   const { date, minutes } = chileNow(now);
   const out = [];
+  const days = shop.days ?? '0123456';
   const push = (day, dayLabel, from) => {
+    // El local no atiende ese día de la semana.
+    if (!days.includes(String(weekday(day)))) return;
     for (let m = ceilStep(from); m <= shop.closes; m += SLOT_STEP) {
       const slot = `${day}T${hhmm(m)}`;
       out.push({
@@ -54,9 +57,13 @@ export function buildSlots(shop, now, counts = new Map()) {
   return out;
 }
 
+/** Día de la semana de una fecha 'AAAA-MM-DD': 0 = domingo … 6 = sábado. */
+export const weekday = (date) => new Date(`${date}T12:00:00Z`).getUTCDay();
+
 export function isOpenNow(shop, now) {
-  const { minutes } = chileNow(now);
-  return !shop.paused && minutes >= shop.opens && minutes < shop.closes;
+  const { date, minutes } = chileNow(now);
+  const days = shop.days ?? '0123456';
+  return !shop.paused && days.includes(String(weekday(date))) && minutes >= shop.opens && minutes < shop.closes;
 }
 
 /** Instante real convertido a 'AAAA-MM-DDTHH:MM' en hora de Chile, comparable con una franja. */

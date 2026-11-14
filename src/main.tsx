@@ -5,7 +5,7 @@ import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AdminAccount, AdminCampuses, AdminLayout, AdminOverview, AdminShops } from './pages/admin';
-import { Help, Login, Privacy, Register, RegisterShop } from './pages/auth';
+import { Forgot, Help, Login, Privacy, Register, RegisterShop, ResetPassword, Terms } from './pages/auth';
 import { OwnerAccess, OwnerAccount, OwnerInstitutions, OwnerLayout } from './pages/owner';
 import { ShopLayout, ShopMenu, ShopOrders, ShopSettings, ShopStatsPage } from './pages/shop';
 import { Checkout, Home, OrderDetail, Orders, Profile, ShopPage, StudentLayout } from './pages/student';
@@ -46,6 +46,9 @@ function Routing() {
       <Routes>
         <Route path="/registro" element={<Register />} />
         <Route path="/registro-local" element={<RegisterShop />} />
+        <Route path="/recuperar" element={<Forgot />} />
+        <Route path="/restablecer" element={<ResetPassword />} />
+        <Route path="/condiciones" element={<div className="app"><Terms /></div>} />
         <Route path="/privacidad" element={<div className="app"><Privacy /></div>} />
         <Route path="*" element={<Login />} />
       </Routes>
@@ -98,6 +101,7 @@ function Routing() {
         <Route path="/pedidos/:id" element={<OrderDetail />} />
         <Route path="/perfil" element={<Profile />} />
         <Route path="/ayuda" element={<Help />} />
+        <Route path="/condiciones" element={<Terms back="/perfil" />} />
         <Route path="/privacidad" element={<Privacy back="/perfil" />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -875,6 +875,14 @@ export function OrderDetail() {
         )}
       </section>
 
+      {o.status === 'cancelado' && o.cancel_reason && (
+        <p className="notice notice-warn">
+          <TriangleAlert size={18} aria-hidden />
+          <span>
+            {o.shop_name} canceló el pedido: {o.cancel_reason}
+          </span>
+        </p>
+      )}
       {o.status === 'no_retirado' && (
         <p className="notice notice-warn">
           <TriangleAlert size={18} aria-hidden />

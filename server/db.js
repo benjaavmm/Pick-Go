@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS shops (
   slot_capacity INTEGER NOT NULL DEFAULT 6,    -- pedidos por franja de 10 minutos
   paused INTEGER NOT NULL DEFAULT 0,
   auto_accept INTEGER NOT NULL DEFAULT 0,      -- los pedidos nuevos pasan directo a preparación
+  days TEXT NOT NULL DEFAULT '0123456',        -- días que atiende: 0 = domingo … 6 = sábado
   -- La institución aprueba cada local antes de que aparezca para los estudiantes.
   status TEXT NOT NULL DEFAULT 'pendiente',
   created_at TEXT NOT NULL DEFAULT ''
@@ -52,6 +53,11 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  expires_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -91,6 +97,7 @@ CREATE TABLE IF NOT EXISTS orders (
   paid INTEGER NOT NULL DEFAULT 0,
   total INTEGER NOT NULL,
   note TEXT NOT NULL DEFAULT '',
+  cancel_reason TEXT NOT NULL DEFAULT '',      -- motivo que da el local al rechazar o cancelar
   rating INTEGER CHECK (rating BETWEEN 1 AND 5),
   rating_comment TEXT NOT NULL DEFAULT '',
   on_time INTEGER,                             -- 1 si estuvo listo a la hora de retiro o antes
@@ -122,6 +129,13 @@ CREATE INDEX IF NOT EXISTS order_events_order ON order_events(order_id);
 // sin perder datos (por ejemplo: 3: 'ALTER TABLE shops ADD COLUMN phone TEXT'). Nunca se edita una entrada ya publicada.
 const MIGRATIONS = {
   3: 'ALTER TABLE shops ADD COLUMN auto_accept INTEGER NOT NULL DEFAULT 0',
+  4: `ALTER TABLE shops ADD COLUMN days TEXT NOT NULL DEFAULT '0123456';
+      ALTER TABLE orders ADD COLUMN cancel_reason TEXT NOT NULL DEFAULT '';
+      CREATE TABLE password_resets (
+        token_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        expires_at TEXT NOT NULL
+      );`,
 };
 const FIRST_MIGRATABLE = 3;
 
