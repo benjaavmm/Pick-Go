@@ -95,7 +95,7 @@ test('modo de prueba: el pedido llega al local solo cuando se paga, y se reembol
   assert.equal(pay.pending.orders, 0);
   await local('POST', '/api/shop/pickup', { code: o2.code });
   pay = (await local('GET', '/api/shop/payouts')).body;
-  assert.deepEqual(pay.pending, { orders: 1, gross: 3000, fee: 240, amount: 2760 });
+  assert.deepEqual(pay.pending, { orders: 1, gross: 3000, fee: 240, discounts: 0, amount: 2760 });
 
   // La plataforma registra la transferencia.
   const overview = (await owner('GET', '/api/owner/payments')).body;
@@ -109,8 +109,8 @@ test('modo de prueba: el pedido llega al local solo cuando se paga, y se reembol
   assert.equal(pay.pending.orders, 0);
   assert.equal(pay.settlements[0].reference, 'Transferencia 1234');
   const csv = await (await fetch(`${base}/api/shop/settlements/${r.body.id}.csv`, { headers: { Cookie: local.cookie() } })).text();
-  assert.match(csv, new RegExp(`"${o2.code}";"Entregado";"3000";"240";"2760"`));
-  assert.match(csv, /"Total";"";"";"3000";"240";"2760"/);
+  assert.match(csv, new RegExp(`"${o2.code}";"Entregado";"En la app";"3000";"240";"0";"2760"`));
+  assert.match(csv, /"Total";"";"";"";"3000";"240";"0";"2760"/);
   // Otro local no puede ver esta liquidación.
   const other = await login(base, 'sangucheria@gobite.cl');
   assert.equal((await fetch(`${base}/api/shop/settlements/${r.body.id}.csv`, { headers: { Cookie: other.cookie() } })).status, 404);
@@ -278,4 +278,69 @@ test('las variables PICKGO_* siguen funcionando y la base anterior se sigue usan
   assert.equal(dbFileFrom({}, dir), path.join(dir, 'data', 'pickgo.db'));
   assert.equal(dbFileFrom({ GOBITE_DB: path.join(dir, 'data', 'gobite.db') }, dir), path.join(dir, 'data', 'pickgo.db'));
   assert.equal(dbFileFrom({ GOBITE_DB: '/otra/base.db' }, dir), '/otra/base.db');
+});
+
+test('descuentos de la plataforma: el local recibe el precio completo y se le abona lo cobrado de menos', async () => {
+  const { db, base } = await start(createPayments({ GOBITE_PAYMENTS: 'simulado' }));
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Casino'").get();
+  const menu = db.prepare("SELECT id FROM products WHERE shop_id = ? AND name = 'Menú del día'").get(shop.id).id; // $4.000
+  const student = await login(base, 'estudiante@gobite.cl');
+  const local = await login(base, 'casino@gobite.cl');
+  const owner = await login(base, 'plataforma@gobite.cl');
+  // 10 % menos retirando entre 15:00 y 16:00, definido por la plataforma (comisión de la demo: 8 %).
+  await owner('PATCH', `/api/owner/shops/${shop.id}`, { promos: [{ from: 900, to: 960, percent: 10 }] });
+  const item = [{ productId: menu, qty: 1 }];
+
+  // En la app: el estudiante paga $3.600; la comisión es sobre $4.000 y el local recibe $4.000 − $320.
+  const a = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T15:00', items: item })).body;
+  assert.equal(a.total, 3600);
+  const paid = (await student('POST', `/api/orders/${a.id}/simulate-payment`, { approve: true })).body;
+  assert.equal(paid.fee, 320);
+  await local('POST', '/api/shop/pickup', { code: a.code });
+
+  // Al retirar: el local cobra $3.600 en el mesón y la plataforma le abona los $400.
+  const b = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T15:10', paymentMethod: 'local', items: item })).body;
+  assert.equal(b.total, 3600);
+  // El local ve el historial del cliente en los pedidos que se pagan al retirar.
+  const seen = (await local('GET', '/api/shop/orders')).body.orders.find((o) => o.id === b.id);
+  assert.deepEqual(seen.customer_history, { delivered: 1, no_shows: 0 });
+  await local('POST', '/api/shop/pickup', { code: b.code });
+
+  const pay = (await local('GET', '/api/shop/payouts')).body;
+  assert.deepEqual(pay.pending, { orders: 2, gross: 3600, fee: 320, discounts: 800, amount: 3680 + 400 });
+  const totals = (await owner('GET', '/api/owner/payments')).body.totals;
+  assert.deepEqual([totals.fee, totals.discounts, totals.net], [320, 800, -480]);
+  const st = (await owner('POST', '/api/owner/settlements', { shopId: shop.id })).body;
+  assert.deepEqual([st.amount, st.discounts], [4080, 800]);
+});
+
+test('pagar al retirar: un pedido sin pagar a la vez, y quien no retira solo puede pagar en la app', async () => {
+  const { db, base } = await start(createPayments({ GOBITE_PAYMENTS: 'simulado' }));
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Casino'").get();
+  const fruta = db.prepare("SELECT id FROM products WHERE shop_id = ? AND name = 'Fruta picada'").get(shop.id).id;
+  const student = await login(base, 'estudiante@gobite.cl');
+  const local = await login(base, 'casino@gobite.cl');
+  const order = (slot, paymentMethod) => student('POST', '/api/orders', { shopId: shop.id, slot, paymentMethod, items: [{ productId: fruta, qty: 1 }] });
+
+  assert.equal((await student('GET', '/api/me')).body.pay_later_problem, null);
+  const first = (await order('2026-11-13T12:30', 'junaeb')).body;
+  assert.equal(first.payment_method, 'junaeb');
+  // Con uno sin pagar en curso, el siguiente tiene que pagarse en la app.
+  let r = await order('2026-11-13T12:40', 'local');
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /Ya tienes un pedido por pagar al retirar/);
+  assert.match((await student('GET', '/api/me')).body.pay_later_problem, /Ya tienes un pedido/);
+  assert.equal((await order('2026-11-13T12:40', 'app')).status, 201);
+
+  // No lo retira: queda sin poder pagar al retirar por 30 días, pero puede seguir pidiendo pagando en la app.
+  await local('POST', `/api/shop/orders/${first.id}/status`, { status: 'preparando' });
+  await local('POST', `/api/shop/orders/${first.id}/status`, { status: 'listo' });
+  const real = clock;
+  clock = new Date(real.getTime() + 60 * 60000);
+  assert.equal((await local('POST', `/api/shop/orders/${first.id}/status`, { status: 'no_retirado' })).status, 200);
+  r = await order('2026-11-13T14:00', 'junaeb');
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /solo puedes pagar en la app/);
+  assert.equal((await order('2026-11-13T14:00', 'app')).status, 201);
+  clock = real;
 });

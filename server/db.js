@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { BRAND } from './brand.js';
 import { operatorForCity } from './baes.js';
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS settlements (
   gross INTEGER NOT NULL,                      -- cobrado a los estudiantes
   fee INTEGER NOT NULL,                        -- comisión de la plataforma
   amount INTEGER NOT NULL,                     -- transferido al local
+  discounts INTEGER NOT NULL DEFAULT 0,        -- descuentos de la plataforma que se le abonaron al local
   reference TEXT NOT NULL DEFAULT '',          -- número de transferencia u otra referencia
   created_at TEXT NOT NULL
 );
@@ -136,6 +137,8 @@ CREATE TABLE IF NOT EXISTS orders (
   subtotal INTEGER NOT NULL DEFAULT 0,         -- suma de los productos antes de descuentos
   promo_discount INTEGER NOT NULL DEFAULT 0,   -- descuento por promoción de horario
   reward_discount INTEGER NOT NULL DEFAULT 0,  -- descuento por premio de la tarjeta de sellos
+  -- Descuentos que paga la plataforma (promociones y premios): el local recibe el precio completo.
+  funded_discount INTEGER NOT NULL DEFAULT 0,
   rating INTEGER CHECK (rating BETWEEN 1 AND 5),
   rating_comment TEXT NOT NULL DEFAULT '',
   on_time INTEGER,                             -- 1 si estuvo listo a la hora de retiro o antes
@@ -215,6 +218,10 @@ const MIGRATIONS = {
     const set = db.prepare('UPDATE campuses SET baes_operator = ? WHERE id = ?');
     for (const c of db.prepare('SELECT id, city FROM campuses').all()) set.run(operatorForCity(c.city), c.id);
   },
+  // Desde aquí las promociones y los premios los define y los paga la plataforma. Los pedidos anteriores quedan
+  // con funded_discount = 0: esos descuentos los había puesto el local.
+  8: `ALTER TABLE orders ADD COLUMN funded_discount INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE settlements ADD COLUMN discounts INTEGER NOT NULL DEFAULT 0;`,
 };
 const FIRST_MIGRATABLE = 3;
 

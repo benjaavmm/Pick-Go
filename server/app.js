@@ -227,6 +227,30 @@ export function createApp(
       .get(userId, from).c;
   };
 
+  /**
+   * Por qué un estudiante no puede pagar al retirar, o null si puede. Solo aplica si hay cobro en la app (si no,
+   * todo se paga al retirar). Así, quien no retira un pedido sin pagar pierde ese medio por un tiempo, y nadie tiene
+   * más de un pedido sin pagar a la vez: lo más que arriesga un local es un pedido.
+   */
+  const payLaterProblem = (userId) => {
+    if (!payments) return null;
+    if (noShows(userId) > 0)
+      return 'Tienes un pedido sin retirar en los últimos 30 días, así que por ahora solo puedes pagar en la app.';
+    const open = db
+      .prepare(`SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND payment_method != 'app' AND status IN ${ACTIVE}`)
+      .get(userId).c;
+    if (open > 0) return 'Ya tienes un pedido por pagar al retirar. Retíralo antes de hacer otro así, o paga este en la app.';
+    return null;
+  };
+  /** Historial del cliente en toda la plataforma, para que el local sepa a quién le prepara sin pago previo. */
+  const historyOf = (userId) =>
+    db
+      .prepare(
+        `SELECT COALESCE(SUM(status = 'entregado'), 0) AS delivered, COALESCE(SUM(status = 'no_retirado'), 0) AS no_shows
+         FROM orders WHERE user_id = ?`,
+      )
+      .get(userId);
+
   const parseJson = (text) => {
     try {
       const v = JSON.parse(text);
@@ -268,6 +292,7 @@ export function createApp(
       u.can_order = u.no_shows < NO_SHOW_LIMIT;
       u.baes = !!u.baes;
       u.breaks = parseJson(u.breaks);
+      u.pay_later_problem = payLaterProblem(id);
     } else {
       delete u.baes;
       delete u.breaks;
@@ -323,6 +348,7 @@ export function createApp(
   const orderOut = (o) => ({
     ...o,
     settlement_id: undefined,
+    customer_history: o.payment_method === 'app' ? null : historyOf(o.user_id),
     paid: !!o.paid,
     on_time: o.on_time === null ? null : !!o.on_time,
     items: db
@@ -449,7 +475,7 @@ export function createApp(
       .prepare(
         `SELECT COUNT(*) AS orders,
                 COALESCE(SUM(o.status = 'entregado'), 0) AS delivered,
-                COALESCE(SUM(CASE WHEN o.status = 'entregado' THEN o.total ELSE 0 END), 0) AS sales,
+                COALESCE(SUM(CASE WHEN o.status = 'entregado' THEN o.total + o.funded_discount ELSE 0 END), 0) AS sales,
                 COALESCE(SUM(o.status = 'cancelado'), 0) AS cancelled,
                 COALESCE(SUM(o.status = 'no_retirado'), 0) AS no_show,
                 COALESCE(SUM(o.on_time = 1), 0) AS on_time,
@@ -463,7 +489,7 @@ export function createApp(
       db
         .prepare(
           `SELECT substr(o.slot, 1, 10) AS date, COALESCE(SUM(o.status != 'cancelado'), 0) AS orders,
-                  COALESCE(SUM(CASE WHEN o.status = 'entregado' THEN o.total ELSE 0 END), 0) AS sales
+                  COALESCE(SUM(CASE WHEN o.status = 'entregado' THEN o.total + o.funded_discount ELSE 0 END), 0) AS sales
            FROM orders o WHERE ${where} GROUP BY date`,
         )
         .all(...args)
@@ -1000,6 +1026,11 @@ export function createApp(
       if (method === 'local' && payments && !shop.pay_at_shop)
         fail(409, `${shop.name} solo recibe pedidos pagados en la app.`);
     }
+    // Pagar al retirar exige confianza: el local prepara algo que todavía no está pagado.
+    if (method !== 'app') {
+      const blocked = payLaterProblem(req.user.id);
+      if (blocked) fail(409, blocked);
+    }
     // Los precios siempre se calculan aquí: lo que mande el navegador no se usa para cobrar.
     const price = priceOrder(shop, b, req.user.id);
     const { lines, total } = price;
@@ -1020,8 +1051,8 @@ export function createApp(
       const at = now().toISOString();
       orderId = db
         .prepare(
-          `INSERT INTO orders (code, user_id, shop_id, slot, status, payment_method, payment_status, paid, total, subtotal, promo_discount, reward_discount, note, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO orders (code, user_id, shop_id, slot, status, payment_method, payment_status, paid, total, subtotal, promo_discount, reward_discount, funded_discount, note, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           newCode(),
@@ -1036,6 +1067,8 @@ export function createApp(
           price.subtotal,
           price.promo_discount,
           price.reward_discount,
+          // Las promociones y los premios los paga la plataforma, no el local.
+          price.promo_discount + price.reward_discount,
           note,
           at,
         ).lastInsertRowid;
@@ -1117,7 +1150,8 @@ export function createApp(
       return order;
     }
     if (order.payment_status === 'pendiente') {
-      const fee = Math.round((order.total * commissionBps()) / 10000);
+      // La comisión se calcula sobre el precio completo: el descuento lo pone la plataforma.
+      const fee = Math.round(((order.total + order.funded_discount) * commissionBps()) / 10000);
       // Solo una de las vías concurrentes puede pasar el pedido de pendiente a aprobado.
       const changed = db
         .prepare("UPDATE orders SET payment_status = 'aprobado', payment_ref = ?, fee = ?, paid = 1 WHERE id = ? AND payment_status = 'pendiente'")
@@ -1276,6 +1310,8 @@ export function createApp(
   app.patch('/api/shop/me', shopOnly, (req, res) => {
     const s = myShop(req);
     const b = req.body ?? {};
+    if (b.promos !== undefined || b.loyalty_every !== undefined || b.loyalty_max !== undefined)
+      fail(403, `Las promociones y la tarjeta de sellos las define y las paga ${BRAND}.`);
     const next = {
       name: b.name !== undefined ? str(b.name, 60, 'El nombre') : s.name,
       description: b.description !== undefined ? str(b.description, 120, 'La descripción', { required: false }) : s.description,
@@ -1290,12 +1326,11 @@ export function createApp(
       days: b.days !== undefined ? daysOfWeek(b.days) : s.days,
       pay_at_shop: b.pay_at_shop !== undefined ? (b.pay_at_shop ? 1 : 0) : s.pay_at_shop,
       accepts_baes: b.accepts_baes !== undefined ? (b.accepts_baes ? 1 : 0) : s.accepts_baes,
-      promos: b.promos !== undefined ? JSON.stringify(promosOf(b.promos)) : s.promos,
-      loyalty_every: b.loyalty_every !== undefined ? (b.loyalty_every ? int(b.loyalty_every, 2, 30, 'Los sellos para un premio') : 0) : s.loyalty_every,
-      loyalty_max: b.loyalty_max !== undefined ? int(b.loyalty_max, 0, 100_000, 'El valor máximo del premio') : s.loyalty_max,
+      promos: s.promos,
+      loyalty_every: s.loyalty_every,
+      loyalty_max: s.loyalty_max,
     };
     if (next.closes <= next.opens) fail(400, 'La hora de cierre debe ser posterior a la de apertura.');
-    if (next.loyalty_every && next.loyalty_max < 1) fail(400, 'Indica el valor máximo del producto de regalo.');
     db.prepare(
       `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?, pay_at_shop=?, accepts_baes=?, promos=?, loyalty_every=?, loyalty_max=?
        WHERE id=?`,
@@ -1380,13 +1415,9 @@ export function createApp(
       db
         .prepare(
           `SELECT COALESCE(SUM(status = 'entregado'), 0) AS delivered,
-                  COALESCE(SUM(CASE WHEN status = 'entregado' THEN total ELSE 0 END), 0) AS sales,
+                  COALESCE(SUM(CASE WHEN status = 'entregado' THEN total + funded_discount ELSE 0 END), 0) AS sales,
                   COALESCE(SUM(status = 'no_retirado' AND payment_method = 'app' AND payment_status = 'aprobado'), 0) AS no_show_paid,
                   COALESCE(SUM(CASE WHEN status = 'no_retirado' AND payment_method = 'app' AND payment_status = 'aprobado' THEN total ELSE 0 END), 0) AS no_show_paid_amount,
-                  COALESCE(SUM(status = 'entregado' AND promo_discount > 0), 0) AS promo_orders,
-                  COALESCE(SUM(CASE WHEN status = 'entregado' AND promo_discount > 0 THEN total ELSE 0 END), 0) AS promo_sales,
-                  COALESCE(SUM(CASE WHEN status = 'entregado' THEN promo_discount ELSE 0 END), 0) AS promo_given,
-                  COALESCE(SUM(status = 'entregado' AND reward_discount > 0), 0) AS rewards,
                   COALESCE(SUM(status = 'entregado' AND payment_method = 'junaeb' AND payment_status = 'aprobado'), 0) AS baes_orders,
                   COALESCE(SUM(CASE WHEN status = 'entregado' AND payment_method = 'junaeb' AND payment_status = 'aprobado' THEN total ELSE 0 END), 0) AS baes_sales
            FROM orders WHERE ${base} AND substr(slot, 1, 10) BETWEEN ? AND ?`,
@@ -1426,10 +1457,6 @@ export function createApp(
       new_customers: customers.filter((c) => c.first >= from).length,
       no_show_paid: cur.no_show_paid,
       no_show_paid_amount: cur.no_show_paid_amount,
-      promo_orders: cur.promo_orders,
-      promo_sales: cur.promo_sales,
-      promo_given: cur.promo_given,
-      rewards: cur.rewards,
       baes_orders: cur.baes_orders,
       baes_sales: cur.baes_sales,
     });
@@ -1734,15 +1761,25 @@ export function createApp(
     res.json({ id: c.id, name: c.name, city: c.city, baes_operator: operator });
   });
 
-  // ---------- liquidaciones: lo cobrado en la app que hay que transferir a cada local ----------
-  // Se liquida lo entregado y lo no retirado (el local lo preparó). Lo cancelado ya fue reembolsado.
-  const PAYABLE = `o.payment_method = 'app' AND o.payment_status = 'aprobado' AND o.status IN ('entregado','no_retirado') AND o.settlement_id IS NULL`;
-  const pendingFor = (shopId) => {
-    const r = db
-      .prepare(`SELECT COUNT(*) AS orders, COALESCE(SUM(o.total), 0) AS gross, COALESCE(SUM(o.fee), 0) AS fee FROM orders o WHERE o.shop_id = ? AND ${PAYABLE}`)
+  // ---------- liquidaciones: lo que la plataforma le transfiere a cada local ----------
+  // Pagado en la app: se liquida lo entregado y lo no retirado (el local lo preparó), al precio completo menos la
+  // comisión; lo cancelado ya fue reembolsado. Pagado al retirar con descuento de la plataforma: el estudiante pagó
+  // menos en el mesón, así que la plataforma le abona al local la diferencia.
+  const SETTLED = `((o.payment_method = 'app' AND o.payment_status = 'aprobado' AND o.status IN ('entregado','no_retirado'))
+                    OR (o.payment_method != 'app' AND o.status = 'entregado' AND o.funded_discount > 0))`;
+  const PAYABLE = `${SETTLED} AND o.settlement_id IS NULL`;
+  const PAYOUT = `CASE WHEN o.payment_method = 'app' THEN o.total + o.funded_discount - o.fee ELSE o.funded_discount END`;
+  const pendingFor = (shopId) =>
+    db
+      .prepare(
+        `SELECT COUNT(*) AS orders,
+                COALESCE(SUM(CASE WHEN o.payment_method = 'app' THEN o.total ELSE 0 END), 0) AS gross,
+                COALESCE(SUM(o.fee), 0) AS fee,
+                COALESCE(SUM(o.funded_discount), 0) AS discounts,
+                COALESCE(SUM(${PAYOUT}), 0) AS amount
+         FROM orders o WHERE o.shop_id = ? AND ${PAYABLE}`,
+      )
       .get(shopId);
-    return { ...r, amount: r.gross - r.fee };
-  };
   const SETTLEMENT_SELECT = `SELECT st.*, s.name AS shop_name FROM settlements st JOIN shops s ON s.id = st.shop_id`;
   /** Pedidos pagados en la app que todavía no se entregan: se liquidan cuando se cierren. */
   const inProgressFor = (shopId) =>
@@ -1771,10 +1808,14 @@ export function createApp(
       .map((s) => ({ ...s, pending: pendingFor(s.id), in_progress: inProgressFor(s.id) }));
     const totals = db
       .prepare(
-        `SELECT COALESCE(SUM(total), 0) AS gross, COALESCE(SUM(fee), 0) AS fee, COUNT(*) AS orders
-         FROM orders WHERE payment_method = 'app' AND payment_status = 'aprobado'`,
+        `SELECT COALESCE(SUM(CASE WHEN o.payment_method = 'app' THEN o.total ELSE 0 END), 0) AS gross,
+                COALESCE(SUM(o.fee), 0) AS fee,
+                COALESCE(SUM(o.payment_method = 'app'), 0) AS orders,
+                COALESCE(SUM(o.funded_discount), 0) AS discounts
+         FROM orders o WHERE ${SETTLED}`,
       )
       .get();
+    totals.net = totals.fee - totals.discounts;
     res.json({
       mode: payments?.mode ?? null,
       commission_bps: commissionBps(),
@@ -1801,8 +1842,8 @@ export function createApp(
       const p = pendingFor(shop.id);
       if (p.orders === 0) fail(409, `${shop.name} no tiene montos por liquidar.`);
       id = db
-        .prepare('INSERT INTO settlements (shop_id, orders, gross, fee, amount, reference, created_at) VALUES (?,?,?,?,?,?,?)')
-        .run(shop.id, p.orders, p.gross, p.fee, p.amount, reference, now().toISOString()).lastInsertRowid;
+        .prepare('INSERT INTO settlements (shop_id, orders, gross, fee, discounts, amount, reference, created_at) VALUES (?,?,?,?,?,?,?,?)')
+        .run(shop.id, p.orders, p.gross, p.fee, p.discounts, p.amount, reference, now().toISOString()).lastInsertRowid;
       db.prepare(`UPDATE orders AS o SET settlement_id = ? WHERE o.shop_id = ? AND ${PAYABLE}`).run(id, shop.id);
       db.exec('COMMIT');
     } catch (e) {
@@ -1816,10 +1857,23 @@ export function createApp(
   const settlementCsv = (st) => {
     const rows = db.prepare(`${ORDER_SELECT} WHERE o.settlement_id = ? ORDER BY o.slot`).all(st.id);
     const cell = (v) => `"${String(v ?? '').replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"`;
+    const PAID = { app: 'En la app', local: 'En el local', junaeb: 'Junaeb en el local' };
     const lines = [
-      ['Fecha', 'Código', 'Estado', 'Cobrado (CLP)', 'Comisión (CLP)', 'Para el local (CLP)'],
-      ...rows.map((o) => [o.slot.slice(0, 10), o.code, o.status === 'entregado' ? 'Entregado' : 'No retirado', o.total, o.fee, o.total - o.fee]),
-      ['Total', '', '', st.gross, st.fee, st.amount],
+      ['Fecha', 'Código', 'Estado', 'Pago', 'Cobrado en la app (CLP)', 'Comisión (CLP)', `Descuento ${BRAND} (CLP)`, 'Para el local (CLP)'],
+      ...rows.map((o) => {
+        const app = o.payment_method === 'app';
+        return [
+          o.slot.slice(0, 10),
+          o.code,
+          o.status === 'entregado' ? 'Entregado' : 'No retirado',
+          PAID[o.payment_method] ?? o.payment_method,
+          app ? o.total : 0,
+          o.fee,
+          o.funded_discount,
+          app ? o.total + o.funded_discount - o.fee : o.funded_discount,
+        ];
+      }),
+      ['Total', '', '', '', st.gross, st.fee, st.discounts, st.amount],
     ];
     return '\ufeff' + lines.map((l) => l.map(cell).join(';')).join('\r\n');
   };
@@ -1850,6 +1904,42 @@ export function createApp(
     const after = await refund(getOrder(o.id));
     if (after.payment_status !== 'reembolsado') fail(502, 'El servicio de pago volvió a rechazar el reembolso.');
     res.json(after);
+  });
+
+  // ---------- plataforma: descuentos y calidad de cada local ----------
+  // Las promociones y la tarjeta de sellos son decisiones comerciales de la plataforma, y las paga ella con su
+  // comisión. El local sigue a cargo de su operación: menú, horarios, cupos y aceptar pedidos.
+  app.get('/api/owner/shops', ownerOnly, (_req, res) => {
+    const from = addDays(chileNow(now()).date, -29);
+    const shops = db
+      .prepare(
+        `SELECT s.id, s.name, s.emoji, s.status, s.paused, s.promos, s.loyalty_every, s.loyalty_max, c.name AS campus_name, i.name AS institution
+         FROM shops s JOIN campuses c ON c.id = s.campus_id JOIN institutions i ON i.id = c.institution_id
+         ORDER BY i.name, s.name`,
+      )
+      .all()
+      .map((s) => {
+        const money30 = db
+          .prepare(
+            `SELECT COALESCE(SUM(o.fee), 0) AS fee, COALESCE(SUM(o.funded_discount), 0) AS discounts
+             FROM orders o WHERE o.shop_id = ? AND ${SETTLED} AND substr(o.slot, 1, 10) >= ?`,
+          )
+          .get(s.id, from);
+        return { ...s, paused: !!s.paused, promos: parseJson(s.promos), totals: stats([s.id], 30).totals, ...money30 };
+      });
+    res.json({ commission_bps: commissionBps(), shops });
+  });
+
+  app.patch('/api/owner/shops/:id', ownerOnly, (req, res) => {
+    const s = getShop(Number(req.params.id));
+    const b = req.body ?? {};
+    const promos = b.promos !== undefined ? JSON.stringify(promosOf(b.promos)) : s.promos;
+    const every = b.loyalty_every !== undefined ? (b.loyalty_every ? int(b.loyalty_every, 2, 30, 'Los sellos para un premio') : 0) : s.loyalty_every;
+    const max = b.loyalty_max !== undefined ? int(b.loyalty_max, 0, 100_000, 'El valor máximo del premio') : s.loyalty_max;
+    if (every && max < 1) fail(400, 'Indica el valor máximo del producto de regalo.');
+    db.prepare('UPDATE shops SET promos = ?, loyalty_every = ?, loyalty_max = ? WHERE id = ?').run(promos, every, max, s.id);
+    const fresh = getShop(s.id);
+    res.json({ id: fresh.id, promos: parseJson(fresh.promos), loyalty_every: fresh.loyalty_every, loyalty_max: fresh.loyalty_max });
   });
 
   // ---------- plataforma: quien opera la app crea instituciones y sus cuentas de administración ----------

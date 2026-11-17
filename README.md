@@ -6,12 +6,12 @@ hora. Así no pierdes en la fila los 10 minutos que tienes para comer.
 
 Lo que la distingue:
 
-- **Calza con tus recreos.** El estudiante guarda sus recreos y la app le propone retirar dentro del próximo, y marca
-  las horas que calzan con su horario.
-- **Beca Junaeb.** Los locales adheridos la reciben; el estudiante llega con el pedido listo y el monto exacto, y paga
-  en segundos con la app de su operador (Edenred en regiones, Pluxee en la Región Metropolitana).
-- **Pago en la app, retiro con código QR, promociones en horas tranquilas y tarjeta de sellos.**
-- **Paneles para el local y la institución** con lo que la app les genera: ventas, fila evitada y clientes.
+- **Calza con tus recreos.** Si el estudiante guarda sus recreos, la app le propone retirar dentro del próximo y marca
+  las horas que calzan. Si no los guarda, elige la hora que quiera.
+- **Varios medios de pago.** En la app, en el local o con Junaeb al retirar, según lo que acepte cada local.
+- **Descuentos de GoBite.** Las promociones y la tarjeta de sellos las define y las paga la plataforma con su
+  comisión: el local recibe siempre el precio completo.
+- **Paneles para el local, la institución y la plataforma** con ventas, puntualidad, fila evitada y clientes.
 
 | Inicio | Carrito y hora de retiro | Pedido listo |
 | --- | --- | --- |
@@ -32,13 +32,12 @@ Lo que la distingue:
 - Productos con foto y opciones (tamaños, agregados), con el precio calculado al elegir.
 - **Mis recreos**: guarda tus recreos (días y horario) y al pedir te proponemos retirar dentro del próximo; las horas
   que calzan se marcan en el carrito y el inicio muestra cuánto falta para tu recreo.
-- **Beca Junaeb**: marca en tu perfil que tienes beca y te proponemos pagar con ella en los locales adheridos. Pagas en
-  el mesón al retirar, con instrucciones según el operador de tu sede, y te avisamos qué app abrir cuando está listo.
 - Pago en la app al confirmar el pedido: el local lo recibe recién cuando el pago se aprueba, y si lo rechaza o el
-  estudiante cancela a tiempo, el dinero se devuelve solo. Cada local decide si también acepta pagar al retirar.
+  estudiante cancela a tiempo, el dinero se devuelve solo. Cada local decide si también acepta pagar al retirar, en
+  efectivo o con Junaeb (ver «Pagar al retirar» y «Junaeb»).
 - Seguimiento en vivo y aviso cuando el pedido está listo, también con la app cerrada.
 - Código de retiro con QR, historial, «pedir lo de siempre» y calificación del local.
-- Promociones por hora de retiro, tarjeta de sellos con premio y favoritos.
+- Promociones de GoBite por hora de retiro, tarjeta de sellos con premio y favoritos.
 - Perfil con cambio de sede, apariencia clara u oscura, ayuda, descarga de datos y eliminación de cuenta.
 
 **Locales**
@@ -50,12 +49,12 @@ Lo que la distingue:
   aceptación automática.
 - Tablero pensado para una tablet en el mostrador: la pantalla no se apaga y la alerta suena hasta aceptar.
 - Días de atención por local, impresión de comandas y descarga de pedidos en CSV (con el medio de pago).
-- **Beca Junaeb**: el local la activa si está adherido al operador de su sede. Al entregar un pedido con beca, la app
-  muestra el monto y cómo cobrarlo, y el local confirma si se cobró con la beca o con otro medio.
+- Junaeb: el local la activa si está adherido al operador de su sede. Al entregar, la app muestra el monto y cómo
+  cobrarlo, y el local confirma si se cobró con Junaeb o con otro medio.
+- En los pedidos que se pagan al retirar, el local ve el historial del cliente (pedidos retirados y no retirados).
 - Panel «Lo que ganaste con GoBite»: ventas por la app, pedidos en horas peak, fila evitada (estimada),
   clientes nuevos y recurrentes, y pedidos no retirados que igual se cobraron.
-- Promociones en horas tranquilas, tarjeta de sellos, tiempo de preparación por producto e impresión automática de
-  la comanda al aceptar.
+- Tiempo de preparación por producto e impresión automática de la comanda al aceptar.
 - Menú editable con foto, ícono y opciones por producto (todos opcionales), horarios, cupo por franja,
   anticipación mínima y pausa de pedidos.
 - Métricas: ventas, puntualidad, calificación, demanda por hora, productos más pedidos y opiniones.
@@ -70,6 +69,9 @@ Lo que la distingue:
 **Plataforma** (quien opera GoBite)
 
 - Define la comisión, ve cuánto transferir a cada local y registra cada transferencia; el local ve el detalle.
+- **Locales**: define las promociones y la tarjeta de sellos de cada local, ve cuánto pone en descuentos frente a lo
+  que gana en comisiones, y la calidad de servicio de cada local (puntualidad, cancelados, no retirados,
+  calificación).
 - Crea instituciones con su primera sede y su cuenta de administración.
 - Recupera el acceso de quien olvidó su contraseña, con una clave temporal.
 
@@ -157,13 +159,50 @@ Mercado Pago y revisa que el monto coincida.
 
 Ten en cuenta que Mercado Pago cobra su propia comisión a tu cuenta: la comisión de GoBite debe cubrirla.
 
-## Beca Junaeb (BAES)
+## Quién decide qué
+
+- **El local decide su operación**: menú, precios, horarios, cupo por franja, anticipación, pausar, y aceptar o
+  rechazar cada pedido con un motivo. Es quien cocina: si la app le quitara esas decisiones, prometería horas que no
+  puede cumplir.
+- **GoBite decide lo comercial**: la comisión, las promociones y la tarjeta de sellos. Y ve la calidad de cada local
+  en **Plataforma → Locales**. La institución puede suspender un local que no cumpla.
+
+## Descuentos (promociones y sellos)
+
+Los define la plataforma en **Plataforma → Locales → Descuentos**, y los paga con su comisión. El local no los
+configura y recibe siempre el precio completo:
+
+- **Pagado en la app**: el estudiante paga el precio con descuento; la comisión se calcula sobre el precio completo y
+  el local recibe el precio completo menos la comisión. GoBite se queda con la comisión menos el descuento.
+- **Pagado al retirar** (efectivo o Junaeb): el local cobra el precio con descuento en el mesón y GoBite le abona la
+  diferencia en la siguiente liquidación.
+
+Ejemplo con comisión de 8 % y una promoción de 10 % sobre un menú de $4.000: el estudiante paga $3.600, el local
+recibe $3.680 y GoBite pone $80. Si una promoción supera la comisión, el panel lo advierte. Los descuentos de los
+pedidos anteriores a este cambio los había puesto el local y no se abonan.
+
+## Pagar al retirar
+
+Un local que acepta pagos al retirar prepara algo que todavía no está pagado. Es lo mismo que el pago contra entrega
+de las apps de delivery, y se resuelve igual que ellas: limitando el riesgo, en vez de obligar al estudiante a ir dos
+veces (una a pagar y otra a buscar).
+
+- Cada estudiante puede tener **un solo pedido sin pagar a la vez**. Lo más que arriesga un local es un pedido.
+- Quien deja un pedido sin retirar **solo puede pagar en la app durante 30 días**. Con tres sin retirar en 30 días no
+  puede hacer pedidos nuevos.
+- En esos pedidos el local ve el **historial del cliente** y decide si lo acepta.
+- Cada local decide si acepta pagos al retirar (efectivo y Junaeb, por separado). Si no quiere ese riesgo, recibe
+  solo pedidos pagados en la app.
+
+Estas reglas aplican cuando el cobro en la app está activado; sin él, todos los pedidos se pagan al retirar.
+
+## Junaeb (BAES)
 
 **La beca no se puede cobrar dentro de la app.** Junaeb entrega la beca a través de operadores privados (Edenred en
 regiones y Pluxee en la Región Metropolitana, en 2026), y ninguno ofrece una integración pública para que una app
 externa cobre la beca. Por eso la beca se paga en el mesón del local, y la app se encarga de que eso tome segundos:
 
-1. El estudiante elige «Beca Junaeb al retirar» en un local adherido. El pedido llega al local igual que cualquier
+1. El estudiante elige «Junaeb al retirar» en un local adherido. El pedido llega al local igual que cualquier
    otro y se prepara para su hora.
 2. Cuando está listo, el aviso le dice qué app abrir y cuánto va a pagar. En el pedido ve los pasos según su operador
    (Ticket Junaeb: «Pagar», clave y código QR; Pluxee: «Pago QR» y PIN).
@@ -175,8 +214,8 @@ resto: Edenred). Como Junaeb lo licita y ya cambió en la Región Metropolitana 
 corregir en **Sedes**. Cada local activa la beca en **Ajustes** solo si está adherido al operador de su sede; la
 adhesión se hace directamente con Edenred o Pluxee.
 
-Lo cobrado con la beca no pasa por la plataforma ni entra a las liquidaciones: el dinero le llega al local desde el
-operador. La app no guarda el RUT, la clave ni el saldo del estudiante.
+Lo cobrado con la beca no pasa por la plataforma: el dinero le llega al local desde el operador. Solo entra a las
+liquidaciones el abono de los descuentos de GoBite, igual que en los demás pagos al retirar. La app no guarda el RUT, la clave ni el saldo del estudiante.
 
 Si algún día un operador abre una integración para plataformas (enlace de pago o API), `server/payments.js` ya está
 pensado para sumar otro proveedor de cobro, como se sumó Mercado Pago.

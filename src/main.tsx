@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AdminAccount, AdminCampuses, AdminLayout, AdminOverview, AdminShops } from './pages/admin';
 import { Forgot, Help, Login, Privacy, Register, RegisterShop, ResetPassword, Terms } from './pages/auth';
-import { OwnerAccess, OwnerAccount, OwnerInstitutions, OwnerLayout, OwnerPayments } from './pages/owner';
+import { OwnerAccess, OwnerAccount, OwnerInstitutions, OwnerLayout, OwnerPayments, OwnerShops } from './pages/owner';
 import { ShopLayout, ShopMenu, ShopOrders, ShopSettings, ShopStatsPage } from './pages/shop';
 import { Checkout, Home, TestPayment, OrderDetail, Orders, Profile, ShopPage, StudentLayout } from './pages/student';
 import { AppProvider, applyTheme, useApp } from './state';
@@ -59,6 +59,7 @@ function Routing() {
       <Routes>
         <Route element={<OwnerLayout />}>
           <Route path="/plataforma" element={<OwnerInstitutions />} />
+          <Route path="/plataforma/locales" element={<OwnerShops />} />
           <Route path="/plataforma/pagos" element={<OwnerPayments />} />
           <Route path="/plataforma/accesos" element={<OwnerAccess />} />
           <Route path="/plataforma/cuenta" element={<OwnerAccount />} />
