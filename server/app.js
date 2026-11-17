@@ -14,6 +14,7 @@ import {
   userFromToken,
   verifyPassword,
 } from './auth.js';
+import { CHECKOUT_MINUTES } from './payments.js';
 import { addDays, buildSlots, chileNow, chileStamp, isOpenNow } from './time.js';
 
 class HttpError extends Error {
@@ -28,6 +29,8 @@ const fail = (status, message) => {
 
 const RANK = { recibido: 0, preparando: 1, listo: 2, entregado: 3 };
 const ACTIVE = "('recibido','preparando','listo')";
+// Pedidos que aún esperan el pago en la app: reservan la hora de retiro, pero el local todavía no los ve.
+const UNPAID = "('pendiente','expirado')";
 const MAX_ACTIVE_ORDERS = 5;
 const NO_SHOW_LIMIT = 3; // con este número de pedidos no retirados en 30 días se suspenden los pedidos nuevos
 const MAX_IMAGE_BYTES = 500 * 1024;
@@ -131,7 +134,7 @@ function createLimiter() {
 export function createApp(
   db,
   // Los topes por IP son amplios a propósito: en una sede todos los celulares salen por la misma red.
-  { demo = true, now = () => new Date(), distDir = null, push = null, mail = null, ipLimit = 6000, authIpLimit = 300 } = {},
+  { demo = true, now = () => new Date(), distDir = null, push = null, mail = null, payments = null, ipLimit = 6000, authIpLimit = 300 } = {},
 ) {
   const app = express();
   const hub = createHub();
@@ -275,6 +278,8 @@ export function createApp(
       ...s,
       paused: !!s.paused,
       auto_accept: !!s.auto_accept,
+      // Sin cobro en la app, todos los pedidos se pagan en el local.
+      pay_at_shop: payments ? !!s.pay_at_shop : true,
       is_open: isOpenNow(s, now()),
       next_slot: next ? { slot: next.slot, day: next.day, time: next.time } : null,
       rating: r.n ? Math.round(r.avg * 10) / 10 : null,
@@ -296,6 +301,7 @@ export function createApp(
 
   const orderOut = (o) => ({
     ...o,
+    settlement_id: undefined,
     paid: !!o.paid,
     on_time: o.on_time === null ? null : !!o.on_time,
     items: db
@@ -334,7 +340,9 @@ export function createApp(
     );
     const fresh = getOrder(order.id);
     hub.send(`user:${fresh.user_id}`, 'order', { type: 'update', order: fresh });
-    hub.send(`shop:${fresh.shop_id}`, 'order', { type: 'update', order: fresh });
+    // El local no se entera de los pedidos que nunca llegaron a pagarse.
+    if (fresh.payment_status !== 'pendiente' && fresh.payment_status !== 'expirado')
+      hub.send(`shop:${fresh.shop_id}`, 'order', { type: 'update', order: fresh });
     if (push) {
       if (by === 'shop' && STUDENT_PUSH[status])
         push.toUser(fresh.user_id, {
@@ -405,7 +413,7 @@ export function createApp(
     };
     if (shopIds.length === 0) return empty;
     const marks = shopIds.map(() => '?').join(',');
-    const where = `o.shop_id IN (${marks}) AND substr(o.slot, 1, 10) BETWEEN ? AND ?`;
+    const where = `o.shop_id IN (${marks}) AND substr(o.slot, 1, 10) BETWEEN ? AND ? AND o.payment_status NOT IN ${UNPAID}`;
     const args = [...shopIds, from, today];
     const t = db
       .prepare(
@@ -473,7 +481,7 @@ export function createApp(
 
   // ---------- público ----------
   app.get('/api/config', (_req, res) => {
-    res.json({ demo, push_key: push?.publicKey ?? null, mail: !!mail });
+    res.json({ demo, push_key: push?.publicKey ?? null, mail: !!mail, payments: payments?.mode ?? null });
   });
 
   app.get('/api/images/:id', (req, res) => {
@@ -772,7 +780,7 @@ export function createApp(
   });
 
   // ---------- estudiante: pedidos ----------
-  app.post('/api/orders', student, (req, res) => {
+  app.post('/api/orders', student, async (req, res) => {
     const b = req.body ?? {};
     const shop = getShop(int(b.shopId, 1, 1e9, 'El local'));
     if (shop.status !== 'activo') fail(404, 'No encontramos ese local.');
@@ -780,6 +788,10 @@ export function createApp(
     if (noShows(req.user.id) >= NO_SHOW_LIMIT)
       fail(409, `Tienes ${NO_SHOW_LIMIT} pedidos sin retirar en los últimos 30 días, así que por ahora no puedes hacer pedidos nuevos.`);
     const note = str(b.note, 200, 'La nota', { required: false });
+    // Si la plataforma cobra en la app, ese es el camino por defecto; pagar al retirar solo si el local lo acepta.
+    const method = payments ? (b.paymentMethod === 'local' ? 'local' : 'app') : 'local';
+    if (method === 'local' && payments && !shop.pay_at_shop)
+      fail(409, `${shop.name} solo recibe pedidos pagados en la app.`);
     if (!Array.isArray(b.items) || b.items.length === 0) fail(400, 'Tu carrito está vacío.');
     if (b.items.length > 30) fail(400, 'El pedido tiene demasiados productos distintos.');
 
@@ -813,7 +825,7 @@ export function createApp(
     const total = lines.reduce((sum, l) => sum + l.unit * l.qty, 0);
 
     const active = db
-      .prepare(`SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND status IN ${ACTIVE}`)
+      .prepare(`SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND (status IN ${ACTIVE} OR status = 'pago_pendiente')`)
       .get(req.user.id).c;
     if (active >= MAX_ACTIVE_ORDERS)
       fail(409, `Tienes ${active} pedidos en curso. Retira alguno antes de hacer otro.`);
@@ -828,16 +840,17 @@ export function createApp(
       const at = now().toISOString();
       orderId = db
         .prepare(
-          `INSERT INTO orders (code, user_id, shop_id, slot, status, payment_method, paid, total, note, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO orders (code, user_id, shop_id, slot, status, payment_method, payment_status, paid, total, note, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           newCode(),
           req.user.id,
           shop.id,
           slot.slot,
-          'recibido',
-          'local', // por ahora no hay pagos en la app: se paga en el local al retirar
+          method === 'app' ? 'pago_pendiente' : 'recibido',
+          method,
+          method === 'app' ? 'pendiente' : '',
           0,
           total,
           note,
@@ -847,13 +860,30 @@ export function createApp(
         'INSERT INTO order_items (order_id, product_id, name, emoji, price, qty, options) VALUES (?,?,?,?,?,?,?)',
       );
       for (const l of lines) ins.run(orderId, l.p.id, l.p.name, l.p.emoji, l.unit, l.qty, JSON.stringify(l.chosen));
-      db.prepare('INSERT INTO order_events (order_id, status, at) VALUES (?,?,?)').run(orderId, 'recibido', at);
+      db.prepare('INSERT INTO order_events (order_id, status, at) VALUES (?,?,?)').run(orderId, method === 'app' ? 'pago_pendiente' : 'recibido', at);
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');
       throw e;
     }
-    let order = getOrder(orderId);
+    const order = getOrder(orderId);
+    if (method === 'local') return res.status(201).json(announce(order));
+    // Pago en la app: el pedido le llega al local recién cuando el pago se aprueba.
+    let checkout;
+    try {
+      checkout = await payments.createCheckout(order);
+    } catch (e) {
+      console.warn('No se pudo iniciar el pago:', e.message);
+      db.prepare("UPDATE orders SET status = 'cancelado', payment_status = 'expirado', cancel_reason = 'No se pudo iniciar el pago' WHERE id = ?").run(order.id);
+      fail(502, 'No pudimos conectar con el servicio de pago. Intenta de nuevo en un momento.');
+    }
+    res.status(201).json({ ...order, pay_url: checkout.url });
+  });
+
+  /** Entrega un pedido nuevo al local: aceptación automática, aviso en vivo y notificación push. */
+  const announce = (orderIn) => {
+    let order = orderIn;
+    const shop = getShop(order.shop_id);
     // Con aceptación automática el pedido entra directo a preparación y el estudiante recibe el aviso de inmediato.
     if (shop.auto_accept) order = setStatus(order, 'preparando');
     hub.send(`shop:${shop.id}`, 'order', { type: 'new', order });
@@ -863,7 +893,115 @@ export function createApp(
       url: '/panel',
       tag: `order-${order.id}`,
     });
-    res.status(201).json(order);
+    return order;
+  };
+
+  const commissionBps = () =>
+    Number(db.prepare("SELECT value FROM settings WHERE key = 'commission_bps'").get()?.value ?? 0);
+
+  /** Devuelve el dinero de un pedido pagado en la app. Si el proveedor falla, queda marcado para revisión. */
+  const refund = async (order) => {
+    if (order.payment_method !== 'app' || order.payment_status !== 'aprobado') return getOrder(order.id);
+    let status = 'reembolsado';
+    try {
+      await payments.refund(order.payment_ref);
+    } catch (e) {
+      console.warn(`No se pudo reembolsar el pedido ${order.code}:`, e.message);
+      status = 'reembolso_fallido';
+    }
+    db.prepare('UPDATE orders SET payment_status = ?, fee = 0, paid = 0 WHERE id = ?').run(status, order.id);
+    const fresh = getOrder(order.id);
+    hub.send(`user:${fresh.user_id}`, 'order', { type: 'update', order: fresh });
+    return fresh;
+  };
+
+  /**
+   * Aplica a un pedido el resultado de un pago consultado al proveedor (nunca lo que diga el navegador).
+   * Es idempotente: puede llegar el aviso del proveedor y la consulta del estudiante al mismo tiempo.
+   */
+  const applyPayment = async (orderId, payment) => {
+    const order = getOrder(orderId);
+    if (!order || order.payment_method !== 'app' || !payment) return order;
+    if (payment.status !== 'approved') return order;
+    if (payment.amount !== order.total || (payment.currency && payment.currency !== 'CLP')) {
+      console.warn(`El pago ${payment.ref} no coincide con el pedido ${order.code}: no se aprueba.`);
+      return order;
+    }
+    if (order.payment_status === 'pendiente') {
+      const fee = Math.round((order.total * commissionBps()) / 10000);
+      // Solo una de las vías concurrentes puede pasar el pedido de pendiente a aprobado.
+      const changed = db
+        .prepare("UPDATE orders SET payment_status = 'aprobado', payment_ref = ?, fee = ?, paid = 1 WHERE id = ? AND payment_status = 'pendiente'")
+        .run(payment.ref, fee, order.id).changes;
+      if (!changed) return getOrder(order.id);
+      if (order.status === 'pago_pendiente') return announce(setStatus(getOrder(order.id), 'recibido', { by: 'payment' }));
+    }
+    // Pagó tarde, cuando la reserva ya había vencido: se le devuelve el dinero.
+    if (order.payment_status === 'expirado') {
+      db.prepare("UPDATE orders SET payment_status = 'aprobado', payment_ref = ?, paid = 1 WHERE id = ? AND payment_status = 'expirado'").run(payment.ref, order.id);
+      return refund(getOrder(order.id));
+    }
+    return getOrder(order.id);
+  };
+
+  /** Libera las horas reservadas por pedidos que nunca se pagaron. */
+  const expireUnpaid = async () => {
+    const limit = new Date(now().getTime() - (CHECKOUT_MINUTES + 2) * 60000).toISOString();
+    const stale = db
+      .prepare("SELECT id FROM orders WHERE status = 'pago_pendiente' AND payment_status = 'pendiente' AND created_at < ?")
+      .all(limit);
+    for (const { id } of stale) {
+      // Antes de liberar la hora se consulta una última vez por si el aviso del proveedor no llegó.
+      const found = await payments?.findPayment(id).catch(() => null);
+      const after = await applyPayment(id, found);
+      if (after?.payment_status !== 'pendiente') continue;
+      db.prepare("UPDATE orders SET payment_status = 'expirado', cancel_reason = 'No se completó el pago' WHERE id = ?").run(id);
+      setStatus(getOrder(id), 'cancelado', { paid: false, by: 'payment' });
+    }
+  };
+  app.locals.expireUnpaid = expireUnpaid;
+  if (payments) setInterval(() => void expireUnpaid().catch((e) => console.warn(e.message)), 60000).unref();
+
+  // Volver a abrir el pago de un pedido pendiente (por ejemplo, si cerró la pestaña del pago).
+  app.post('/api/orders/:id/pay', student, async (req, res) => {
+    const o = myOrder(req);
+    if (!payments || o.status !== 'pago_pendiente') fail(409, 'Este pedido no tiene un pago pendiente.');
+    const checkout = await payments.createCheckout(o).catch(() => fail(502, 'No pudimos conectar con el servicio de pago. Intenta de nuevo.'));
+    res.json({ pay_url: checkout.url });
+  });
+
+  // Al volver del pago, la app pregunta el resultado. La respuesta sale del proveedor, no del navegador.
+  app.post('/api/orders/:id/payment/check', student, async (req, res) => {
+    const o = myOrder(req);
+    if (!payments || o.payment_method !== 'app' || o.payment_status !== 'pendiente') return res.json(o);
+    if (limiter.hit(`paycheck|${o.id}`, 20, 60000)) return res.json(o);
+    const found = await payments.findPayment(o.id).catch(() => null);
+    res.json(await applyPayment(o.id, found));
+  });
+
+  // Pantalla de pago de prueba (solo en modo simulado): aprueba o rechaza sin mover dinero.
+  app.post('/api/orders/:id/simulate-payment', student, async (req, res) => {
+    if (payments?.mode !== 'simulado') fail(404, 'Ruta no encontrada.');
+    const o = myOrder(req);
+    if (o.payment_status !== 'pendiente') return res.json(o);
+    if (!req.body?.approve) return res.json(o);
+    res.json(await applyPayment(o.id, { ref: `simulado-${o.id}-${Date.now()}`, status: 'approved', amount: o.total, currency: 'CLP' }));
+  });
+
+  // Aviso de Mercado Pago. Se responde rápido y el pago se vuelve a consultar a Mercado Pago antes de usarlo.
+  app.post('/api/payments/webhook', async (req, res) => {
+    if (payments?.mode !== 'mercadopago') return res.status(404).json({ error: 'Ruta no encontrada.' });
+    const dataId = String(req.query['data.id'] ?? req.body?.data?.id ?? '');
+    const type = String(req.query.type ?? req.body?.type ?? '');
+    if (type !== 'payment' || !/^\d{1,20}$/.test(dataId)) return res.json({ ok: true });
+    if (!payments.verifyWebhook(req.headers, dataId)) return res.status(401).json({ error: 'Firma inválida.' });
+    res.json({ ok: true });
+    try {
+      const p = await payments.getPayment(dataId);
+      if (p?.orderId) await applyPayment(p.orderId, p);
+    } catch (e) {
+      console.warn('No se pudo procesar un aviso de pago:', e.message);
+    }
   });
 
   app.get('/api/orders', student, (req, res) => {
@@ -881,10 +1019,15 @@ export function createApp(
     res.json(myOrder(req));
   });
 
-  app.post('/api/orders/:id/cancel', student, (req, res) => {
+  app.post('/api/orders/:id/cancel', student, async (req, res) => {
     const o = myOrder(req);
+    if (o.status === 'pago_pendiente') {
+      db.prepare("UPDATE orders SET payment_status = 'expirado' WHERE id = ? AND payment_status = 'pendiente'").run(o.id);
+      return res.json(setStatus(getOrder(o.id), 'cancelado', { paid: false, by: 'payment' }));
+    }
     if (o.status !== 'recibido') fail(409, 'El local ya empezó a preparar tu pedido, así que no se puede cancelar.');
-    res.json(setStatus(o, 'cancelado', { paid: false, by: 'student' }));
+    const cancelled = setStatus(o, 'cancelado', { paid: o.paid, by: 'student' });
+    res.json(await refund(cancelled));
   });
 
   app.post('/api/orders/:id/rate', student, (req, res) => {
@@ -924,10 +1067,11 @@ export function createApp(
       paused: b.paused !== undefined ? (b.paused ? 1 : 0) : s.paused,
       auto_accept: b.auto_accept !== undefined ? (b.auto_accept ? 1 : 0) : s.auto_accept,
       days: b.days !== undefined ? daysOfWeek(b.days) : s.days,
+      pay_at_shop: b.pay_at_shop !== undefined ? (b.pay_at_shop ? 1 : 0) : s.pay_at_shop,
     };
     if (next.closes <= next.opens) fail(400, 'La hora de cierre debe ser posterior a la de apertura.');
     db.prepare(
-      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?
+      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?, pay_at_shop=?
        WHERE id=?`,
     ).run(
       next.name,
@@ -941,6 +1085,7 @@ export function createApp(
       next.paused,
       next.auto_accept,
       next.days,
+      next.pay_at_shop,
       s.id,
     );
     res.json(shopOut(getShop(s.id)));
@@ -950,7 +1095,7 @@ export function createApp(
     const today = chileNow(now()).date;
     const rows = db
       .prepare(
-        `${ORDER_SELECT} WHERE o.shop_id = ? AND (o.slot >= ? OR o.status IN ${ACTIVE})
+        `${ORDER_SELECT} WHERE o.shop_id = ? AND (o.slot >= ? OR o.status IN ${ACTIVE}) AND o.payment_status NOT IN ${UNPAID}
          ORDER BY o.slot, o.id`,
       )
       .all(req.user.shop_id, today);
@@ -1001,18 +1146,19 @@ export function createApp(
 
   const shopOrder = (req, id) => {
     const o = getOrder(id);
-    if (!o || o.shop_id !== req.user.shop_id) fail(404, 'No encontramos ese pedido.');
+    if (!o || o.shop_id !== req.user.shop_id || o.status === 'pago_pendiente') fail(404, 'No encontramos ese pedido.');
     return o;
   };
 
-  app.post('/api/shop/orders/:id/status', shopOnly, (req, res) => {
+  app.post('/api/shop/orders/:id/status', shopOnly, async (req, res) => {
     const o = shopOrder(req, Number(req.params.id));
     const status = req.body?.status;
     if (!(o.status in RANK) || o.status === 'entregado') fail(409, 'Ese pedido ya está cerrado.');
     if (status === 'cancelado') {
       const reason = str(req.body?.reason, 120, 'El motivo', { required: false });
       db.prepare('UPDATE orders SET cancel_reason = ? WHERE id = ?').run(reason, o.id);
-      return res.json(setStatus(o, 'cancelado', { paid: false }));
+      // Si el estudiante pagó en la app, se le devuelve el dinero automáticamente.
+      return res.json(await refund(setStatus(getOrder(o.id), 'cancelado', { paid: o.paid })));
     }
     if (status === 'no_retirado') {
       if (o.status !== 'listo') fail(409, 'Solo un pedido listo se puede marcar como no retirado.');
@@ -1032,6 +1178,7 @@ export function createApp(
     if (!row) fail(404, `No hay un pedido con el código ${code} en este local.`);
     const o = getOrder(row.id);
     if (o.status === 'entregado') fail(409, `El pedido ${code} ya fue entregado.`);
+    if (o.status === 'pago_pendiente') fail(404, `No hay un pedido con el código ${code} en este local.`);
     if (!(o.status in RANK)) fail(409, `El pedido ${code} está cerrado y no se puede entregar.`);
     res.json(setStatus(o, 'entregado', { paid: true }));
   });
@@ -1243,6 +1390,124 @@ export function createApp(
       .prepare('INSERT INTO campuses (institution_id, name, city) VALUES (?,?,?)')
       .run(req.user.institution_id, name, city).lastInsertRowid;
     res.status(201).json({ id, name, city });
+  });
+
+  // ---------- liquidaciones: lo cobrado en la app que hay que transferir a cada local ----------
+  // Se liquida lo entregado y lo no retirado (el local lo preparó). Lo cancelado ya fue reembolsado.
+  const PAYABLE = `o.payment_method = 'app' AND o.payment_status = 'aprobado' AND o.status IN ('entregado','no_retirado') AND o.settlement_id IS NULL`;
+  const pendingFor = (shopId) => {
+    const r = db
+      .prepare(`SELECT COUNT(*) AS orders, COALESCE(SUM(o.total), 0) AS gross, COALESCE(SUM(o.fee), 0) AS fee FROM orders o WHERE o.shop_id = ? AND ${PAYABLE}`)
+      .get(shopId);
+    return { ...r, amount: r.gross - r.fee };
+  };
+  const SETTLEMENT_SELECT = `SELECT st.*, s.name AS shop_name FROM settlements st JOIN shops s ON s.id = st.shop_id`;
+  /** Pedidos pagados en la app que todavía no se entregan: se liquidan cuando se cierren. */
+  const inProgressFor = (shopId) =>
+    db
+      .prepare(`SELECT COUNT(*) AS orders, COALESCE(SUM(total), 0) AS gross FROM orders WHERE shop_id = ? AND payment_status = 'aprobado' AND status IN ${ACTIVE}`)
+      .get(shopId);
+
+  app.get('/api/shop/payouts', shopOnly, (req, res) => {
+    res.json({
+      enabled: !!payments,
+      commission_bps: commissionBps(),
+      pending: pendingFor(req.user.shop_id),
+      in_progress: inProgressFor(req.user.shop_id),
+      settlements: db.prepare(`${SETTLEMENT_SELECT} WHERE st.shop_id = ? ORDER BY st.id DESC LIMIT 24`).all(req.user.shop_id),
+    });
+  });
+
+  app.get('/api/owner/payments', ownerOnly, (_req, res) => {
+    const shops = db
+      .prepare(
+        `SELECT s.id, s.name, s.emoji, s.status, c.name AS campus_name, i.name AS institution
+         FROM shops s JOIN campuses c ON c.id = s.campus_id JOIN institutions i ON i.id = c.institution_id
+         ORDER BY i.name, s.name`,
+      )
+      .all()
+      .map((s) => ({ ...s, pending: pendingFor(s.id), in_progress: inProgressFor(s.id) }));
+    const totals = db
+      .prepare(
+        `SELECT COALESCE(SUM(total), 0) AS gross, COALESCE(SUM(fee), 0) AS fee, COUNT(*) AS orders
+         FROM orders WHERE payment_method = 'app' AND payment_status = 'aprobado'`,
+      )
+      .get();
+    res.json({
+      mode: payments?.mode ?? null,
+      commission_bps: commissionBps(),
+      totals,
+      shops,
+      settlements: db.prepare(`${SETTLEMENT_SELECT} ORDER BY st.id DESC LIMIT 30`).all(),
+      failed_refunds: db.prepare(`${ORDER_SELECT} WHERE o.payment_status = 'reembolso_fallido' ORDER BY o.id DESC`).all().map(orderOut),
+    });
+  });
+
+  app.patch('/api/owner/settings', ownerOnly, (req, res) => {
+    const bps = int(req.body?.commission_bps, 0, 5000, 'La comisión');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('commission_bps', ?)").run(String(bps));
+    // La comisión nueva se aplica a los pedidos que se paguen desde ahora; los ya pagados conservan la suya.
+    res.json({ commission_bps: bps });
+  });
+
+  app.post('/api/owner/settlements', ownerOnly, (req, res) => {
+    const shop = getShop(int(req.body?.shopId, 1, 1e9, 'El local'));
+    const reference = str(req.body?.reference, 80, 'La referencia', { required: false });
+    db.exec('BEGIN IMMEDIATE');
+    let id;
+    try {
+      const p = pendingFor(shop.id);
+      if (p.orders === 0) fail(409, `${shop.name} no tiene montos por liquidar.`);
+      id = db
+        .prepare('INSERT INTO settlements (shop_id, orders, gross, fee, amount, reference, created_at) VALUES (?,?,?,?,?,?,?)')
+        .run(shop.id, p.orders, p.gross, p.fee, p.amount, reference, now().toISOString()).lastInsertRowid;
+      db.prepare(`UPDATE orders AS o SET settlement_id = ? WHERE o.shop_id = ? AND ${PAYABLE}`).run(id, shop.id);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    res.status(201).json(db.prepare(`${SETTLEMENT_SELECT} WHERE st.id = ?`).get(id));
+  });
+
+  // Detalle de una liquidación, para enviarlo al local junto con la transferencia.
+  const settlementCsv = (st) => {
+    const rows = db.prepare(`${ORDER_SELECT} WHERE o.settlement_id = ? ORDER BY o.slot`).all(st.id);
+    const cell = (v) => `"${String(v ?? '').replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"`;
+    const lines = [
+      ['Fecha', 'Código', 'Estado', 'Cobrado (CLP)', 'Comisión (CLP)', 'Para el local (CLP)'],
+      ...rows.map((o) => [o.slot.slice(0, 10), o.code, o.status === 'entregado' ? 'Entregado' : 'No retirado', o.total, o.fee, o.total - o.fee]),
+      ['Total', '', '', st.gross, st.fee, st.amount],
+    ];
+    return '\ufeff' + lines.map((l) => l.map(cell).join(';')).join('\r\n');
+  };
+  const sendSettlement = (res, st) => {
+    if (!st) fail(404, 'No encontramos esa liquidación.');
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="pickgo-liquidacion-${st.id}-${st.created_at.slice(0, 10)}.csv"`,
+    });
+    res.send(settlementCsv(st));
+  };
+  app.get('/api/owner/settlements/:id.csv', ownerOnly, (req, res) => {
+    sendSettlement(res, db.prepare('SELECT * FROM settlements WHERE id = ?').get(Number(req.params.id)));
+  });
+  app.get('/api/shop/settlements/:id.csv', shopOnly, (req, res) => {
+    sendSettlement(res, db.prepare('SELECT * FROM settlements WHERE id = ? AND shop_id = ?').get(Number(req.params.id), req.user.shop_id));
+  });
+
+  // Reembolsos que el proveedor rechazó: reintentar, o marcarlos resueltos si se devolvió por otra vía.
+  app.post('/api/owner/orders/:id/refund', ownerOnly, async (req, res) => {
+    const o = getOrder(Number(req.params.id));
+    if (!o || o.payment_status !== 'reembolso_fallido') fail(404, 'Ese pedido no tiene un reembolso pendiente.');
+    if (req.body?.manual) {
+      db.prepare("UPDATE orders SET payment_status = 'reembolsado' WHERE id = ?").run(o.id);
+      return res.json(getOrder(o.id));
+    }
+    db.prepare("UPDATE orders SET payment_status = 'aprobado' WHERE id = ?").run(o.id);
+    const after = await refund(getOrder(o.id));
+    if (after.payment_status !== 'reembolsado') fail(502, 'El servicio de pago volvió a rechazar el reembolso.');
+    res.json(after);
   });
 
   // ---------- plataforma: quien opera Pick&Go crea instituciones y sus cuentas de administración ----------

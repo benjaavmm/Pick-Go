@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS shops (
   paused INTEGER NOT NULL DEFAULT 0,
   auto_accept INTEGER NOT NULL DEFAULT 0,      -- los pedidos nuevos pasan directo a preparación
   days TEXT NOT NULL DEFAULT '0123456',        -- días que atiende: 0 = domingo … 6 = sábado
+  pay_at_shop INTEGER NOT NULL DEFAULT 0,      -- también acepta pedidos que se pagan al retirar
   -- La institución aprueba cada local antes de que aparezca para los estudiantes.
   status TEXT NOT NULL DEFAULT 'pendiente',
   created_at TEXT NOT NULL DEFAULT ''
@@ -86,6 +87,16 @@ CREATE TABLE IF NOT EXISTS products (
   available INTEGER NOT NULL DEFAULT 1,
   deleted INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS settlements (
+  id INTEGER PRIMARY KEY,
+  shop_id INTEGER NOT NULL REFERENCES shops(id),
+  orders INTEGER NOT NULL,
+  gross INTEGER NOT NULL,                      -- cobrado a los estudiantes
+  fee INTEGER NOT NULL,                        -- comisión de la plataforma
+  amount INTEGER NOT NULL,                     -- transferido al local
+  reference TEXT NOT NULL DEFAULT '',          -- número de transferencia u otra referencia
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY,
   code TEXT NOT NULL UNIQUE,
@@ -93,7 +104,11 @@ CREATE TABLE IF NOT EXISTS orders (
   shop_id INTEGER NOT NULL REFERENCES shops(id),
   slot TEXT NOT NULL,                          -- hora de retiro, 'AAAA-MM-DDTHH:MM' hora de Chile
   status TEXT NOT NULL,                        -- recibido | preparando | listo | entregado | cancelado | no_retirado
-  payment_method TEXT NOT NULL DEFAULT 'local', -- por ahora siempre 'local': se paga en el local al retirar
+  payment_method TEXT NOT NULL DEFAULT 'local', -- 'app' (pagado en la app) o 'local' (se paga al retirar)
+  payment_status TEXT NOT NULL DEFAULT '',     -- solo pago en la app: pendiente | aprobado | expirado | reembolsado | reembolso_fallido
+  payment_ref TEXT NOT NULL DEFAULT '',        -- identificador del pago en el proveedor
+  fee INTEGER NOT NULL DEFAULT 0,              -- comisión de la plataforma sobre este pedido
+  settlement_id INTEGER REFERENCES settlements(id), -- liquidación en que se le pagó al local
   paid INTEGER NOT NULL DEFAULT 0,
   total INTEGER NOT NULL,
   note TEXT NOT NULL DEFAULT '',
@@ -136,6 +151,21 @@ const MIGRATIONS = {
         user_id INTEGER NOT NULL REFERENCES users(id),
         expires_at TEXT NOT NULL
       );`,
+  5: `CREATE TABLE settlements (
+        id INTEGER PRIMARY KEY,
+        shop_id INTEGER NOT NULL REFERENCES shops(id),
+        orders INTEGER NOT NULL,
+        gross INTEGER NOT NULL,
+        fee INTEGER NOT NULL,
+        amount INTEGER NOT NULL,
+        reference TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+      );
+      ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT '';
+      ALTER TABLE orders ADD COLUMN payment_ref TEXT NOT NULL DEFAULT '';
+      ALTER TABLE orders ADD COLUMN fee INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE orders ADD COLUMN settlement_id INTEGER REFERENCES settlements(id);
+      ALTER TABLE shops ADD COLUMN pay_at_shop INTEGER NOT NULL DEFAULT 1;`,
 };
 const FIRST_MIGRATABLE = 3;
 

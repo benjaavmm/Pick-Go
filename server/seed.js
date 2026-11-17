@@ -135,6 +135,9 @@ const DEMO_OPTIONS = {
   'Completo italiano': [group('e', 'Agregados', false, true, [['Queso', 400], ['Chucrut', 200]])],
 };
 
+// Comisión de ejemplo de la plataforma en la demo, en puntos base (800 = 8 %).
+const DEMO_COMMISSION_BPS = 800;
+
 const DEMO_STUDENTS = ['Camila Rojas', 'Matías Soto', 'Valentina Díaz', 'Benjamín Fuentes', 'Antonia Vera', 'Tomás Reyes'];
 
 // Generador determinista: el historial de demostración es igual en cada instalación.
@@ -154,8 +157,8 @@ function seedHistory(db, now, shops, studentIds) {
   const pick = (list) => list[Math.floor(rand() * list.length)];
   const today = chileNow(now).date;
   const insOrder = db.prepare(
-    `INSERT INTO orders (code, user_id, shop_id, slot, status, payment_method, paid, total, note, rating, on_time, created_at)
-     VALUES (?,?,?,?,?,'local',?,?,'',?,?,?)`,
+    `INSERT INTO orders (code, user_id, shop_id, slot, status, payment_method, payment_status, payment_ref, fee, paid, total, note, rating, on_time, created_at)
+     VALUES (?,?,?,?,?,'app',?,?,?,?,?,'',?,?,?)`,
   );
   const insItem = db.prepare('INSERT INTO order_items (order_id, product_id, name, emoji, price, qty) VALUES (?,?,?,?,?,?)');
   const insEvent = db.prepare('INSERT INTO order_events (order_id, status, at) VALUES (?,?,?)');
@@ -191,7 +194,11 @@ function seedHistory(db, now, shops, studentIds) {
           shop.id,
           slot,
           status,
-          status === 'entregado' ? 1 : 0,
+          // Historial pagado en la app: los cancelados quedaron reembolsados.
+          status === 'cancelado' ? 'reembolsado' : 'aprobado',
+          `simulado-${n}`,
+          status === 'cancelado' ? 0 : Math.round((total * DEMO_COMMISSION_BPS) / 10000),
+          status === 'cancelado' ? 0 : 1,
           total,
           rating,
           onTime,
@@ -260,6 +267,9 @@ export function seedIfEmpty(db, { now = new Date(), history = true } = {}) {
       }
     }
   });
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('commission_bps', ?)").run(String(DEMO_COMMISSION_BPS));
+  // En la demo, el Casino también acepta pagar al retirar; los demás solo cobran en la app.
+  db.prepare("UPDATE shops SET pay_at_shop = 1 WHERE name = 'Casino'").run();
   insUser.run('Equipo Pick&Go', 'plataforma@pickgo.cl', passHash, 'owner', null, null, null, nowIso);
   const studentIds = [insUser.run('Estudiante Demo', 'estudiante@pickgo.cl', passHash, 'student', firstCampus, null, null, nowIso).lastInsertRowid];
   if (history) {

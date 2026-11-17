@@ -6,9 +6,9 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AdminAccount, AdminCampuses, AdminLayout, AdminOverview, AdminShops } from './pages/admin';
 import { Forgot, Help, Login, Privacy, Register, RegisterShop, ResetPassword, Terms } from './pages/auth';
-import { OwnerAccess, OwnerAccount, OwnerInstitutions, OwnerLayout } from './pages/owner';
+import { OwnerAccess, OwnerAccount, OwnerInstitutions, OwnerLayout, OwnerPayments } from './pages/owner';
 import { ShopLayout, ShopMenu, ShopOrders, ShopSettings, ShopStatsPage } from './pages/shop';
-import { Checkout, Home, OrderDetail, Orders, Profile, ShopPage, StudentLayout } from './pages/student';
+import { Checkout, Home, TestPayment, OrderDetail, Orders, Profile, ShopPage, StudentLayout } from './pages/student';
 import { AppProvider, applyTheme, useApp } from './state';
 import { ErrorBoundary, Loading, Logo, Splash } from './ui';
 import { WifiOff } from 'lucide-react';
@@ -58,6 +58,7 @@ function Routing() {
       <Routes>
         <Route element={<OwnerLayout />}>
           <Route path="/plataforma" element={<OwnerInstitutions />} />
+          <Route path="/plataforma/pagos" element={<OwnerPayments />} />
           <Route path="/plataforma/accesos" element={<OwnerAccess />} />
           <Route path="/plataforma/cuenta" element={<OwnerAccount />} />
         </Route>
@@ -99,6 +100,7 @@ function Routing() {
         <Route path="/carrito" element={<Checkout />} />
         <Route path="/pedidos" element={<Orders />} />
         <Route path="/pedidos/:id" element={<OrderDetail />} />
+        <Route path="/pago-de-prueba/:id" element={<TestPayment />} />
         <Route path="/perfil" element={<Profile />} />
         <Route path="/ayuda" element={<Help />} />
         <Route path="/condiciones" element={<Terms back="/perfil" />} />

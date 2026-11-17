@@ -35,6 +35,8 @@ export interface Shop {
   slot_capacity: number;
   paused: boolean;
   auto_accept: boolean;
+  /** Acepta pedidos que se pagan al retirar. */
+  pay_at_shop: boolean;
   /** Días que atiende: dígitos de 0 (domingo) a 6 (sábado). */
   days: string;
   status: ShopStatus;
@@ -76,7 +78,8 @@ export interface Slot {
   time: string;
   remaining: number;
 }
-export type Status = 'recibido' | 'preparando' | 'listo' | 'entregado' | 'cancelado' | 'no_retirado';
+export type Status = 'pago_pendiente' | 'recibido' | 'preparando' | 'listo' | 'entregado' | 'cancelado' | 'no_retirado';
+export type PaymentStatus = '' | 'pendiente' | 'aprobado' | 'expirado' | 'reembolsado' | 'reembolso_fallido';
 export interface Order {
   id: number;
   code: string;
@@ -85,6 +88,12 @@ export interface Order {
   slot: string;
   status: Status;
   paid: boolean;
+  /** 'app': pagado en la app; 'local': se paga al retirar. */
+  payment_method: 'app' | 'local';
+  payment_status: PaymentStatus;
+  fee: number;
+  /** Solo al crear un pedido que se paga en la app: dónde completar el pago. */
+  pay_url?: string;
   total: number;
   note: string;
   rating: number | null;
@@ -135,6 +144,32 @@ export interface AdminShop {
   contact: string | null;
   totals: Totals;
 }
+export interface Settlement {
+  id: number;
+  shop_id: number;
+  shop_name: string;
+  orders: number;
+  gross: number;
+  fee: number;
+  amount: number;
+  reference: string;
+  created_at: string;
+}
+export interface PayoutSummary {
+  orders: number;
+  gross: number;
+  fee: number;
+  amount: number;
+}
+export interface ShopPayouts {
+  enabled: boolean;
+  commission_bps: number;
+  pending: PayoutSummary;
+  in_progress: { orders: number; gross: number };
+  settlements: Settlement[];
+}
+export const percent = (bps: number) => `${(bps / 100).toLocaleString('es-CL', { maximumFractionDigits: 2 })} %`;
+
 export interface Overview extends Stats {
   institution: string;
   days: number;
@@ -237,6 +272,7 @@ export const clockTime = (iso: string) =>
   );
 
 export const STATUS_LABEL: Record<Status, string> = {
+  pago_pendiente: 'Falta pagar',
   recibido: 'Enviado',
   preparando: 'En preparación',
   listo: 'Listo para retirar',
@@ -246,4 +282,26 @@ export const STATUS_LABEL: Record<Status, string> = {
 };
 export const optionsText = (options: { name: string }[]) => options.map((o) => o.name).join(', ');
 export const isActive = (s: Status) => s === 'recibido' || s === 'preparando' || s === 'listo';
+/** Pedidos que el estudiante todavía tiene abiertos, incluido el que falta pagar. */
+export const isOpenOrder = (s: Status) => isActive(s) || s === 'pago_pendiente';
+
+/** Texto del estado del pago, para el estudiante. */
+export function paymentText(o: Pick<Order, 'payment_method' | 'payment_status' | 'status' | 'paid'>) {
+  if (o.payment_method === 'app') {
+    switch (o.payment_status) {
+      case 'aprobado':
+        return 'Pagado en la app';
+      case 'reembolsado':
+        return 'Pago devuelto a tu medio de pago';
+      case 'reembolso_fallido':
+        return 'Estamos gestionando la devolución de tu pago';
+      case 'pendiente':
+        return 'Falta completar el pago';
+      default:
+        return 'Sin cobro';
+    }
+  }
+  if (o.status === 'cancelado' || o.status === 'no_retirado') return 'Sin cobro';
+  return o.paid ? 'Pagado en el local' : 'Se paga en el local al retirar';
+}
 export const firstName = (name: string) => name.trim().split(/\s+/)[0];

@@ -21,7 +21,8 @@ Así no pierdes en la fila los 10 minutos que tienes para comer.
 - Hora de retiro en franjas de 10 minutos, para hoy o mañana. Cada franja tiene cupo, así la demanda del horario
   peak se reparte.
 - Productos con foto y opciones (tamaños, agregados), con el precio calculado al elegir.
-- Se pide en la app y se paga en el local al retirar; la app todavía no cobra.
+- Pago en la app al confirmar el pedido: el local lo recibe recién cuando el pago se aprueba, y si lo rechaza o el
+  estudiante cancela a tiempo, el dinero se devuelve solo. Cada local decide si también acepta pagar al retirar.
 - Seguimiento en vivo y aviso cuando el pedido está listo, también con la app cerrada.
 - Código de retiro con QR, historial, «pedir lo de siempre» y calificación del local.
 - Perfil con cambio de sede, apariencia clara u oscura, ayuda, descarga de datos y eliminación de cuenta.
@@ -48,6 +49,7 @@ Así no pierdes en la fila los 10 minutos que tienes para comer.
 
 **Plataforma** (quien opera Pick&Go)
 
+- Define la comisión, ve cuánto transferir a cada local y registra cada transferencia; el local ve el detalle.
 - Crea instituciones con su primera sede y su cuenta de administración.
 - Recupera el acceso de quien olvidó su contraseña, con una clave temporal.
 
@@ -110,6 +112,26 @@ plataforma recupera accesos con contraseñas temporales.
 | `TRUST_PROXY` | sin definir | Defínela si el servidor queda detrás de un proxy con HTTPS |
 | `PICKGO_VAPID_SUBJECT` | `mailto:soporte@example.com` | Contacto del operador que exigen los servicios de push; usa uno real en producción |
 
+## Cobro en la app
+
+El dinero de los pedidos pagados en la app entra a la cuenta de quien opera Pick&Go. La app calcula la comisión de
+cada pedido y, en **Plataforma → Pagos**, muestra cuánto transferir a cada local; al registrar la transferencia, el
+local la ve con su detalle. Se liquida lo entregado y lo no retirado; lo cancelado se devuelve al estudiante.
+
+| `PICKGO_PAYMENTS` | Qué hace |
+| --- | --- |
+| sin definir | Sin cobro en la app: todo se paga en el local (con datos de demostración se usa `simulado`) |
+| `simulado` | **Marcha blanca**: flujo completo con una pantalla de pago de prueba. No se mueve dinero |
+| `mercadopago` | Cobro real con Mercado Pago Checkout Pro |
+
+Para Mercado Pago define además `PICKGO_MP_ACCESS_TOKEN` (de tu cuenta de Mercado Pago Developers; las credenciales
+de prueba permiten pagar con tarjetas de prueba), `PICKGO_PUBLIC_URL` (dirección `https://` pública de la app, a la
+que Mercado Pago envía los avisos de pago) y, recomendado, `PICKGO_MP_WEBHOOK_SECRET` (la clave secreta de las
+notificaciones). La app nunca confía en lo que diga el navegador ni el aviso: siempre vuelve a consultar el pago a
+Mercado Pago y revisa que el monto coincida.
+
+Ten en cuenta que Mercado Pago cobra su propia comisión a tu cuenta: la comisión de Pick&Go debe cubrirla.
+
 ## Operar con instituciones reales
 
 1. Arranca con `PICKGO_DEMO=0` y define `PICKGO_OWNER_EMAIL` y `PICKGO_OWNER_PASSWORD`. La base parte vacía, con
@@ -157,8 +179,13 @@ cupos al crear cada pedido, así que no depende de lo que mande el navegador.
 
 Lo que falta o conviene saber antes de operar a gran escala:
 
-- **La app no cobra.** Se pide en la app y se paga en el local. Integrar pagos (por ejemplo Webpay) requiere
-  credenciales de comercio.
+- **La integración con Mercado Pago no se ha probado contra Mercado Pago real.** Se probó contra un servidor que imita
+  su API; antes de cobrar de verdad hay que hacer una compra completa con las credenciales de prueba.
+- **Las transferencias a los locales se hacen a mano.** La app calcula los montos y lleva el registro, pero el dinero
+  lo transfiere quien opera la plataforma. Para que llegue directo a cada local hace falta el pago dividido del
+  proveedor (marketplace).
+- **Boletas y facturas no se emiten desde la app.** Cómo documentar las ventas y la comisión hay que definirlo con
+  un contador.
 - **No se verifica que el correo sea del estudiante** al registrarse. La recuperación de contraseña por correo ya
   existe, pero requiere configurar un servicio de envío (SMTP).
 - **Las notificaciones push no se han probado en dispositivos reales**, y la app no se ha probado en iPhone ni

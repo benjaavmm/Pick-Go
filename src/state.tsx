@@ -89,6 +89,8 @@ interface AppState {
   demo: boolean;
   /** El servidor puede enviar correos (recuperación de contraseña). */
   mail: boolean;
+  /** Cobro en la app: modo de prueba, Mercado Pago, o null si todo se paga en el local. */
+  payments: 'simulado' | 'mercadopago' | null;
   setUser: (u: User | null) => void;
   logout: () => Promise<void>;
   cart: Cart;
@@ -199,7 +201,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(storedTheme);
   const first = useRef(true);
   const [intro, setIntro] = useState(SHOW_INTRO);
-  const [config, setConfig] = useState<{ demo: boolean; push_key: string | null; mail?: boolean }>({ demo: false, push_key: null });
+  const [config, setConfig] = useState<{ demo: boolean; push_key: string | null; mail?: boolean; payments?: 'simulado' | 'mercadopago' | null }>({ demo: false, push_key: null });
   const [cart, setCart] = useState<Cart>(loadCart);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [push, setPush] = useState<PushState>('unsupported');
@@ -239,7 +241,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    api<{ demo: boolean; push_key: string | null; mail?: boolean }>('/config')
+    api<{ demo: boolean; push_key: string | null; mail?: boolean; payments?: 'simulado' | 'mercadopago' | null }>('/config')
       .then(setConfig)
       .catch(() => {});
     loadMe();
@@ -395,6 +397,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
       demo: config.demo,
       mail: !!config.mail,
+      payments: config.payments ?? null,
       setUser,
       logout: async () => {
         // Este dispositivo deja de recibir avisos de la cuenta que sale.
@@ -457,7 +460,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setInstallEvent(null);
       },
     };
-  }, [user, boot, intro, loadMe, online, theme, config.demo, config.mail, cart, toast, push, enablePush, installEvent]);
+  }, [user, boot, intro, loadMe, online, theme, config.demo, config.mail, config.payments, cart, toast, push, enablePush, installEvent]);
 
   return (
     <Ctx.Provider value={value}>

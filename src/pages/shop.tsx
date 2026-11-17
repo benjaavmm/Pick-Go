@@ -13,6 +13,7 @@ import {
   ScanLine,
   Settings,
   Star,
+  Store,
   Trash2,
   TriangleAlert,
   UtensilsCrossed,
@@ -35,7 +36,9 @@ import {
   type Order,
   type Product,
   type Shop,
+  type ShopPayouts,
   type ShopStats,
+  percent,
   type Status,
   type User,
 } from '../lib';
@@ -201,7 +204,10 @@ function RejectSheet({ o, onClose, onConfirm }: { o: Order; onClose: () => void;
   const custom = reason === '';
   return (
     <Sheet title={`${o.status === 'recibido' ? 'Rechazar' : 'Cancelar'} pedido ${o.code}`} onClose={onClose}>
-      <p className="muted">Le avisaremos a {o.customer_name} con el motivo.</p>
+      <p className="muted">
+        Le avisaremos a {o.customer_name} con el motivo.
+        {o.payment_method === 'app' && ' Como pagó en la app, le devolveremos el dinero automáticamente.'}
+      </p>
       <div className="stack" role="radiogroup" aria-label="Motivo">
         {[...REASONS, ''].map((r) => (
           <button key={r} type="button" role="radio" aria-checked={reason === r} className={`opt-choice ${reason === r ? 'on' : ''}`} onClick={() => setReason(r)}>
@@ -261,7 +267,7 @@ function OrderCard({ o, onMove, onReject }: { o: Order; onMove: (o: Order, to: S
       </ul>
       {o.note && <p className="note">{o.note}</p>}
       <p className={o.paid ? 'paid' : 'collect'}>
-        {o.paid ? 'Pagado' : `Cobrar ${money(o.total)} al entregar`}
+        {o.payment_method === 'app' ? 'Pagado en la app' : o.paid ? 'Pagado' : `Cobrar ${money(o.total)} al entregar`}
       </p>
       <div className="ticket-actions">
         {next && (
@@ -480,10 +486,12 @@ export function hourBars(byHour: { hour: number; orders: number }[]) {
 export function ShopStatsPage() {
   const [days, setDays] = useState(7);
   const { data, error } = useLoad(() => api<ShopStats>(`/shop/stats?days=${days}`), [days]);
+  const payouts = useLoad(() => api<ShopPayouts>('/shop/payouts'), []);
   if (error) return <main className="panel-body narrow"><p className="error">{error}</p></main>;
   if (!data) return <main className="panel-body narrow"><Loading /></main>;
   const t = data.totals;
   const daily = days === 7 ? data.by_day : data.by_day.filter((_, i) => i % 3 === 0 || i === data.by_day.length - 1);
+  const p = payouts.data;
   return (
     <main className="panel-body">
       <div className="panel-title">
@@ -501,6 +509,38 @@ export function ShopStatsPage() {
         <Kpi label="A tiempo" value={t.on_time_pct === null ? '—' : `${t.on_time_pct}%`} hint="Listos a la hora de retiro" />
         <Kpi label="Calificación" value={t.rating === null ? '—' : t.rating.toFixed(1)} hint={`${t.ratings} ${t.ratings === 1 ? 'opinión' : 'opiniones'}`} />
       </div>
+      {p?.enabled && (
+        <section className="card stack">
+          <div className="panel-title">
+            <h2>Pagos en la app</h2>
+            <span className="muted small">Comisión Pick&amp;Go: {percent(p.commission_bps)}</span>
+          </div>
+          <div className="kpis kpis-inline">
+            <Kpi label="Por recibir" value={money(p.pending.amount)} hint={`${p.pending.orders} pedidos cerrados`} tone="accent" />
+            <Kpi label="Cobrado a estudiantes" value={money(p.pending.gross)} hint={`Comisión ${money(p.pending.fee)}`} />
+            <Kpi label="En curso" value={money(p.in_progress.gross)} hint={`${p.in_progress.orders} pedidos sin entregar`} />
+          </div>
+          <p className="muted small">
+            Se liquida lo entregado y lo no retirado. Lo que se cancela se devuelve al estudiante y no paga comisión.
+          </p>
+          {p.settlements.length > 0 && (
+            <ul className="lines">
+              {p.settlements.map((st) => (
+                <li key={st.id}>
+                  <span>
+                    {shortDay(st.created_at.slice(0, 10))} · {st.orders} pedidos{st.reference && ` · ${st.reference}`}
+                  </span>
+                  <span>
+                    <a href={`/api/shop/settlements/${st.id}.csv`} download>
+                      {money(st.amount)}
+                    </a>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
       <div className="grid-2">
         <section className="card">
           <h2>Pedidos por día</h2>
@@ -887,7 +927,7 @@ export function ShopMenu() {
 const WEEK: [string, string][] = [['1', 'Lun'], ['2', 'Mar'], ['3', 'Mié'], ['4', 'Jue'], ['5', 'Vie'], ['6', 'Sáb'], ['0', 'Dom']];
 
 export function ShopSettings() {
-  const { toast } = useApp();
+  const { toast, payments } = useApp();
   const { data: shop, setData } = useLoad(() => api<Shop>('/shop/me'), []);
   const [f, setF] = useState<null | {
     name: string;
@@ -969,6 +1009,32 @@ export function ShopSettings() {
           {shop.paused ? 'Reanudar' : 'Pausar'}
         </button>
       </section>
+
+      {payments && (
+        <section className="card setting">
+          <span className="setting-icon" aria-hidden>
+            <Store size={20} />
+          </span>
+          <div className="grow">
+            <strong>Permitir pagar al retirar</strong>
+            <p className="muted">
+              {shop.pay_at_shop
+                ? 'Los estudiantes pueden elegir pagar en la app o en tu local. Si alguien no retira, ese pedido no se cobra.'
+                : 'Solo recibes pedidos ya pagados en la app: no pierdes la venta si alguien no retira.'}
+            </p>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={shop.pay_at_shop}
+              aria-label="Permitir pagar al retirar"
+              onChange={() => patch({ pay_at_shop: !shop.pay_at_shop }, shop.pay_at_shop ? 'Solo pedidos pagados en la app' : 'También aceptas pagar al retirar')}
+            />
+            <span aria-hidden />
+          </label>
+        </section>
+      )}
 
       <section className="card setting">
         <span className="setting-icon" aria-hidden>

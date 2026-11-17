@@ -493,8 +493,10 @@ export function Terms({ back = '/' }: { back?: string }) {
       <section className="card">
         <h2>Si eres estudiante</h2>
         <ul>
-          <li>Un pedido confirmado es un compromiso de retirarlo y pagarlo en el local a la hora que elegiste.</li>
-          <li>Puedes cancelar mientras el local no lo haya aceptado.</li>
+          <li>Un pedido confirmado es un compromiso de retirarlo a la hora que elegiste.</li>
+          <li>Si pagaste en la app y no retiras el pedido, el local igual lo preparó: ese pago no se devuelve.</li>
+          <li>Puedes cancelar mientras el local no lo haya aceptado; si pagaste en la app, te devolvemos el pago.</li>
+          <li>Si el local rechaza o cancela tu pedido, te devolvemos el pago completo.</li>
           <li>Si acumulas tres pedidos sin retirar en 30 días, tu cuenta no podrá hacer pedidos nuevos por un tiempo.</li>
           <li>Tu cuenta es personal: no la compartas ni la uses para pedir a nombre de otra persona.</li>
         </ul>
@@ -504,7 +506,7 @@ export function Terms({ back = '/' }: { back?: string }) {
         <ul>
           <li>Mantén tu menú, precios, horarios y disponibilidad al día.</li>
           <li>Acepta solo los pedidos que puedas tener listos a la hora de retiro, y avisa cuando estén listos.</li>
-          <li>El cobro lo haces tú, en tu local, al entregar el pedido.</li>
+          <li>Lo pagado en la app se te transfiere descontada la comisión de Pick&amp;Go; los pedidos que aceptes pagar al retirar los cobras tú.</li>
           <li>La institución puede suspender un local que no cumpla.</li>
         </ul>
       </section>
@@ -529,7 +531,8 @@ const FAQ: [string, string][] = [
   ['¿Cómo retiro mi pedido?', 'Abre el pedido en la app y muestra el código QR o el código de seis caracteres. El local lo escanea o lo escribe y te entrega tu pedido.'],
   ['¿Puedo cancelar?', 'Sí, mientras el local no haya aceptado el pedido. Después de eso ya no se puede cancelar desde la app.'],
   ['¿Qué pasa si no retiro un pedido?', 'El local lo preparó para ti, así que lo marca como no retirado. Si acumulas tres en 30 días, tu cuenta no puede hacer pedidos nuevos hasta que alguno salga de ese período.'],
-  ['¿Cómo pago?', 'Por ahora pides en la app y pagas en el local al retirar, con el medio de pago que acepte ese local. La app no hace ningún cobro.'],
+  ['¿Cómo pago?', 'Pagas en la app al confirmar el pedido, y el local lo recibe apenas se aprueba el pago. Algunos locales también permiten pagar al retirar. Si el local rechaza tu pedido o cancelas antes de que lo acepte, te devolvemos el pago.'],
+  ['¿Qué pasa si cierro la app antes de pagar?', 'Tu pedido queda guardado con la hora reservada por unos minutos. Ábrelo desde Pedidos y toca Pagar. Si no se paga a tiempo, la reserva se libera sola y no se cobra nada.'],
   ['No me llegan los avisos', 'Actívalos en tu perfil. En iPhone primero debes agregar Pick&Go a tu pantalla de inicio y abrirla desde ahí. Con la app abierta, los avisos llegan siempre.'],
   ['¿Cómo instalo la app?', 'En Android, abre el menú del navegador y elige "Instalar app" o "Agregar a pantalla de inicio". En iPhone, toca Compartir y luego "Agregar a inicio".'],
 ];
@@ -564,7 +567,10 @@ export function Privacy({ back = '/' }: { back?: string }) {
           <li>Las calificaciones y comentarios que dejas a los locales.</li>
           <li>Si activas los avisos, el identificador que tu navegador entrega para enviarte notificaciones.</li>
         </ul>
-        <p>No guardamos datos de pago ni tu ubicación: se paga directamente en el local.</p>
+        <p>
+          No guardamos los datos de tu tarjeta ni tu ubicación. Los pagos en la app los procesa el proveedor de pagos
+          (Mercado Pago): Pick&amp;Go solo recibe la confirmación de que el pago se aprobó.
+        </p>
       </section>
       <section className="card">
         <h2>Para qué los usamos</h2>

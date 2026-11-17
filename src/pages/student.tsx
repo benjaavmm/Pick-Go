@@ -2,6 +2,7 @@ import {
   Check,
   ChevronRight,
   Clock,
+  CreditCard,
   MapPin,
   Minus,
   Plus,
@@ -25,7 +26,9 @@ import {
   isActive,
   minutesUntil,
   money,
+  isOpenOrder,
   optionsText,
+  paymentText,
   relativeTime,
   slotDay,
   slotLabel,
@@ -74,6 +77,7 @@ export function StudentLayout() {
 }
 
 const ACTIVE_TITLE: Partial<Record<Status, string>> = {
+  pago_pendiente: 'Falta pagar',
   recibido: 'Esperando al local',
   preparando: 'Aceptado, en preparación',
   listo: '¡Listo para retirar!',
@@ -87,7 +91,11 @@ function LiveTicket({ o }: { o: Order }) {
         <span className="ticket-kicker">{o.shop_name}</span>
         <strong>{ACTIVE_TITLE[o.status]}</strong>
         <span className="ticket-sub">
-          {o.status === 'listo' ? `Muestra el código ${o.code}` : `Retiro ${relativeTime(o.slot)}`}
+          {o.status === 'listo'
+            ? `Muestra el código ${o.code}`
+            : o.status === 'pago_pendiente'
+              ? `Paga ${money(o.total)} para enviarlo`
+              : `Retiro ${relativeTime(o.slot)}`}
         </span>
       </div>
       <div className="ticket-stub">
@@ -108,6 +116,88 @@ interface SearchHit {
   shop_name: string;
 }
 
+/** Abre el pago: la pantalla de prueba dentro de la app, o la página de Mercado Pago. */
+export function goToPayment(url: string, navigate: (to: string) => void) {
+  if (url.startsWith('/')) navigate(url);
+  else if (/^https:\/\/([a-z0-9-]+\.)*mercadopago\.(cl|com)\//i.test(url)) window.location.assign(url);
+}
+
+/** Pantalla de pago de prueba (modo simulado): permite recorrer todo el flujo sin mover dinero. */
+export function TestPayment() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { toast } = useApp();
+  const { data: o, error, reload } = useLoad(() => api<Order>(`/orders/${id}`), [id]);
+  const [busy, setBusy] = useState(false);
+  const decide = async (approve: boolean) => {
+    setBusy(true);
+    try {
+      const r = await api<Order>(`/orders/${id}/simulate-payment`, 'POST', { approve });
+      if (!approve) toast('Pago rechazado. Puedes intentarlo de nuevo.', 'error');
+      navigate(`/pedidos/${r.id}`, { replace: true });
+    } catch (e) {
+      toast(errorText(e), 'error');
+      setBusy(false);
+    }
+  };
+  if (error)
+    return (
+      <main className="page">
+        <TopBar title="Pago" back="/pedidos" />
+        <ErrorBox text={error} retry={reload} />
+      </main>
+    );
+  if (!o)
+    return (
+      <main className="page">
+        <TopBar title="Pago" back="/pedidos" />
+        <Loading />
+      </main>
+    );
+  return (
+    <main className="page">
+      <TopBar title="Pago de prueba" back={`/pedidos/${o.id}`} />
+      <p className="notice notice-warn">
+        <TriangleAlert size={18} aria-hidden />
+        <span>Marcha blanca: esta pantalla reemplaza al pago real. No se cobra dinero.</span>
+      </p>
+      <section className="card stack">
+        <span className="muted">
+          {o.shop_name} · Pedido {o.code}
+        </span>
+        <ul className="lines">
+          {o.items.map((i) => (
+            <li key={i.id}>
+              <span>
+                <b>{i.qty}×</b> {i.name}
+              </span>
+              <span>{money(i.price * i.qty)}</span>
+            </li>
+          ))}
+          <li className="lines-total">
+            <span>Total a pagar</span>
+            <span>{money(o.total)}</span>
+          </li>
+        </ul>
+      </section>
+      {o.status === 'pago_pendiente' ? (
+        <>
+          <button className="btn btn-primary btn-block" disabled={busy} onClick={() => decide(true)}>
+            <CreditCard size={18} aria-hidden /> Aprobar pago de prueba
+          </button>
+          <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => decide(false)}>
+            Simular pago rechazado
+          </button>
+        </>
+      ) : (
+        <Link to={`/pedidos/${o.id}`} className="btn btn-dark btn-block">
+          Este pedido ya no tiene un pago pendiente
+        </Link>
+      )}
+    </main>
+  );
+}
+
 // ---------- Inicio: locales de la sede ----------
 export function Home() {
   const { user } = useApp();
@@ -116,7 +206,7 @@ export function Home() {
   const orders = useLoad(() => api<Order[]>('/orders'), []);
   useOrderEvents(orders.reload);
   useTick();
-  const active = (orders.data ?? []).filter((o) => isActive(o.status));
+  const active = (orders.data ?? []).filter((o) => isOpenOrder(o.status));
   const last = (orders.data ?? []).find((o) => o.status === 'entregado');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchHit[] | null>(null);
@@ -537,7 +627,12 @@ export function Checkout() {
   const navigate = useNavigate();
   const shopId = cart.shopId;
   const slots = useLoad(() => (shopId ? api<Slot[]>(`/shops/${shopId}/slots`) : Promise.resolve([])), [shopId]);
+  const { payments } = useApp();
+  const shopInfo = useLoad(() => (shopId ? api<{ shop: Shop }>(`/shops/${shopId}`) : Promise.resolve(null)), [shopId]);
+  const payAtShop = !payments || !!shopInfo.data?.shop.pay_at_shop;
   const [slot, setSlot] = useState('');
+  const [method, setMethod] = useState<'app' | 'local'>('app');
+  const payMethod = payments ? (payAtShop ? method : 'app') : 'local';
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -569,9 +664,16 @@ export function Checkout() {
         shopId,
         slot,
         note,
+        paymentMethod: payMethod,
         items: cart.lines.map((l) => ({ productId: l.productId, qty: l.qty, choices: l.choices })),
       });
       clearCart();
+      if (order.pay_url) {
+        // El pedido queda guardado: si el pago se interrumpe, se puede retomar desde "Mis pedidos".
+        navigate(`/pedidos/${order.id}`, { replace: true });
+        goToPayment(order.pay_url, navigate);
+        return;
+      }
       navigate(`/pedidos/${order.id}`, { replace: true });
     } catch (e) {
       setError(errorText(e));
@@ -619,17 +721,46 @@ export function Checkout() {
       </div>
 
       <StepTitle n={3}>Pago</StepTitle>
-      <section className="card pay-note">
-        <span className="option-icon" aria-hidden>
-          <Store size={22} />
-        </span>
-        <div className="grow">
-          <strong>Pagas en el local al retirar</strong>
-          <p className="muted">
-            Por ahora no se cobra en la app. Al retirar pagas {money(cartTotal)} con el medio que acepte el local.
-          </p>
+      {payments ? (
+        <div className="options" role="radiogroup" aria-label="Cómo pagas">
+          <button role="radio" aria-checked={payMethod === 'app'} className={payMethod === 'app' ? 'on' : ''} onClick={() => setMethod('app')}>
+            <span className="option-icon" aria-hidden>
+              <CreditCard size={22} />
+            </span>
+            <span className="grow">
+              Pagar ahora en la app
+              <small>{payments === 'simulado' ? 'Pago de prueba: no se cobra dinero real.' : 'Con Mercado Pago: tarjeta, débito o saldo.'}</small>
+            </span>
+            <span className="radio" aria-hidden>
+              {payMethod === 'app' && <Check size={14} strokeWidth={3} />}
+            </span>
+          </button>
+          {payAtShop && (
+            <button role="radio" aria-checked={payMethod === 'local'} className={payMethod === 'local' ? 'on' : ''} onClick={() => setMethod('local')}>
+              <span className="option-icon" aria-hidden>
+                <Store size={22} />
+              </span>
+              <span className="grow">
+                Pagar en el local al retirar
+                <small>Con el medio de pago que acepte el local.</small>
+              </span>
+              <span className="radio" aria-hidden>
+                {payMethod === 'local' && <Check size={14} strokeWidth={3} />}
+              </span>
+            </button>
+          )}
         </div>
-      </section>
+      ) : (
+        <section className="card pay-note">
+          <span className="option-icon" aria-hidden>
+            <Store size={22} />
+          </span>
+          <div className="grow">
+            <strong>Pagas en el local al retirar</strong>
+            <p className="muted">Al retirar pagas {money(cartTotal)} con el medio que acepte el local.</p>
+          </div>
+        </section>
+      )}
       {user!.can_order === false && (
         <p className="notice notice-warn">
           <TriangleAlert size={18} aria-hidden />
@@ -648,7 +779,7 @@ export function Checkout() {
           <strong>{money(cartTotal)}</strong>
         </div>
         <button className="btn btn-primary" disabled={busy || !slot || user!.can_order === false} onClick={confirm}>
-          {busy ? 'Enviando…' : 'Confirmar pedido'}
+          {busy ? 'Enviando…' : payMethod === 'app' ? `Pagar ${money(cartTotal)}` : 'Confirmar pedido'}
         </button>
       </div>
     </main>
@@ -660,8 +791,8 @@ export function Orders() {
   const { data, error, reload } = useLoad(() => api<Order[]>('/orders'), []);
   useOrderEvents(reload);
   useTick();
-  const active = (data ?? []).filter((o) => isActive(o.status));
-  const past = (data ?? []).filter((o) => !isActive(o.status));
+  const active = (data ?? []).filter((o) => isOpenOrder(o.status));
+  const past = (data ?? []).filter((o) => !isOpenOrder(o.status));
   return (
     <main className="page">
       <TopBar title="Mis pedidos" />
@@ -709,6 +840,7 @@ export function Orders() {
 
 const STEPS: Status[] = ['recibido', 'preparando', 'listo', 'entregado'];
 const HEADLINE: Record<Status, string> = {
+  pago_pendiente: 'Falta pagar tu pedido',
   recibido: 'Esperando que el local acepte',
   preparando: 'Aceptado: lo están preparando',
   listo: '¡Listo! Pasa a retirarlo',
@@ -782,6 +914,31 @@ export function OrderDetail() {
     const t = setInterval(reload, 30000);
     return () => clearInterval(t);
   }, [reload]);
+  // Al volver del pago (o al abrir un pedido que falta pagar) se consulta el resultado al servidor.
+  const pendingPay = o?.status === 'pago_pendiente';
+  useEffect(() => {
+    if (!pendingPay) return;
+    let tries = 0;
+    const check = () =>
+      api<Order>(`/orders/${id}/payment/check`, 'POST')
+        .then(setData)
+        .catch(() => {});
+    void check();
+    // Mercado Pago puede tardar unos segundos en confirmar.
+    const t = setInterval(() => (++tries > 6 ? clearInterval(t) : void check()), 5000);
+    return () => clearInterval(t);
+  }, [pendingPay, id, setData]);
+  const [paying, setPaying] = useState(false);
+  const payNow = async () => {
+    setPaying(true);
+    try {
+      const r = await api<{ pay_url: string }>(`/orders/${id}/pay`, 'POST');
+      goToPayment(r.pay_url, navigate);
+    } catch (e) {
+      toast(errorText(e), 'error');
+    }
+    setPaying(false);
+  };
   useEffect(() => {
     // Siempre negro sobre blanco: así lo lee cualquier cámara, también en modo oscuro.
     if (o?.code) QRCode.toDataURL(o.code, { margin: 2, width: 480, errorCorrectionLevel: 'M' }).then(setQr, () => setQr(''));
@@ -923,14 +1080,33 @@ export function OrderDetail() {
         </ul>
         {o.note && <p className="muted">Nota: {o.note}</p>}
         <p className="muted">
-          {o.status === 'cancelado' || o.status === 'no_retirado' ? 'Sin cobro' : o.paid ? 'Pagado en el local' : 'Se paga en el local al retirar'}
+          {paymentText(o)}
         </p>
       </section>
 
-      {o.status === 'recibido' && (
+      {o.status === 'pago_pendiente' && (
+        <section className="card pay-note">
+          <span className="option-icon" aria-hidden>
+            <CreditCard size={22} />
+          </span>
+          <div className="grow stack">
+            <strong>Tu hora está reservada mientras pagas</strong>
+            <p className="muted">
+              El local recibe el pedido apenas se confirme el pago. Si no se paga en unos minutos, la reserva se libera.
+            </p>
+            <button className="btn btn-primary btn-block" onClick={payNow} disabled={paying}>
+              {paying ? 'Abriendo el pago…' : `Pagar ${money(o.total)}`}
+            </button>
+          </div>
+        </section>
+      )}
+      {(o.status === 'recibido' || o.status === 'pago_pendiente') && (
         <button className="btn btn-danger btn-block" onClick={cancel}>
           Cancelar pedido
         </button>
+      )}
+      {o.status === 'recibido' && o.payment_method === 'app' && (
+        <p className="muted small center">Si cancelas antes de que el local lo acepte, te devolvemos el pago.</p>
       )}
       {!active && (
         <button className="btn btn-dark btn-block" onClick={repeat}>

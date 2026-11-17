@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { hashPassword, passwordProblem, purgeExpiredSessions } from './auth.js';
 import { openDb } from './db.js';
 import { createMailer } from './mail.js';
+import { createPayments } from './payments.js';
 import { createPush } from './push.js';
 import { seedIfEmpty } from './seed.js';
 
@@ -68,8 +69,15 @@ purgeExpiredSessions(db);
 setInterval(() => purgeExpiredSessions(db), 3600_000).unref();
 
 const port = Number(process.env.PORT ?? 3001);
+// Cobro en la app: con datos de demostración, por defecto en modo simulado.
+const payments = createPayments({ ...process.env, PICKGO_PAYMENTS: process.env.PICKGO_PAYMENTS ?? (demo ? 'simulado' : '') });
+console.log(
+  payments
+    ? `Pagos en la app: ${payments.mode === 'simulado' ? 'modo de prueba (no se cobra dinero real)' : 'Mercado Pago'}.`
+    : 'Pagos en la app: desactivados (todo se paga en el local).',
+);
 const mail = createMailer();
 console.log(mail ? 'Envío de correos: activado.' : 'Envío de correos: desactivado (faltan PICKGO_SMTP_URL, PICKGO_MAIL_FROM o PICKGO_PUBLIC_URL).');
-createApp(db, { demo, distDir: path.join(root, 'dist'), push: createPush(db), mail }).listen(port, () => {
+createApp(db, { demo, distDir: path.join(root, 'dist'), push: createPush(db), mail, payments }).listen(port, () => {
   console.log(`Pick&Go escuchando en http://localhost:${port}`);
 });

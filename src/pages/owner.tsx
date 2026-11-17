@@ -1,9 +1,9 @@
-import { Building2, KeyRound, Plus, UserCog, UserPlus } from 'lucide-react';
+import { Building2, FileDown, KeyRound, Plus, TriangleAlert, UserCog, UserPlus, Wallet } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { api, errorText } from '../lib';
+import { api, errorText, money, percent, shortDay, type Order, type PayoutSummary, type Settlement } from '../lib';
 import { useApp, useLoad } from '../state';
-import { Empty, Loading, Logo, Sheet } from '../ui';
+import { Empty, Kpi, Loading, Logo, Sheet } from '../ui';
 import { AccountSettings } from './account';
 
 interface Institution {
@@ -32,6 +32,10 @@ export function OwnerLayout() {
           <NavLink to="/plataforma" end>
             <Building2 size={20} aria-hidden />
             Instituciones
+          </NavLink>
+          <NavLink to="/plataforma/pagos">
+            <Wallet size={20} aria-hidden />
+            Pagos
           </NavLink>
           <NavLink to="/plataforma/accesos">
             <KeyRound size={20} aria-hidden />
@@ -189,6 +193,217 @@ export function OwnerInstitutions() {
         </Sheet>
       )}
       {access && <AccessSheet access={access} onClose={() => setAccess(null)} />}
+    </main>
+  );
+}
+
+interface PaymentsOverview {
+  mode: 'simulado' | 'mercadopago' | null;
+  commission_bps: number;
+  totals: { gross: number; fee: number; orders: number };
+  shops: {
+    id: number;
+    name: string;
+    emoji: string;
+    campus_name: string;
+    institution: string;
+    pending: PayoutSummary;
+    in_progress: { orders: number; gross: number };
+  }[];
+  settlements: Settlement[];
+  failed_refunds: Order[];
+}
+
+export function OwnerPayments() {
+  const { toast } = useApp();
+  const { data, error, reload } = useLoad(() => api<PaymentsOverview>('/owner/payments'), []);
+  const [rate, setRate] = useState<string | null>(null);
+  const [paying, setPaying] = useState<PaymentsOverview['shops'][number] | null>(null);
+  const [reference, setReference] = useState('');
+
+  if (error) return <main className="panel-body narrow"><p className="error">{error}</p></main>;
+  if (!data) return <main className="panel-body narrow"><Loading /></main>;
+
+  const saveRate = async (e: FormEvent) => {
+    e.preventDefault();
+    const pct = Number(String(rate).replace(',', '.'));
+    try {
+      await api('/owner/settings', 'PATCH', { commission_bps: Math.round(pct * 100) });
+      toast('Comisión actualizada: se aplica a los pedidos que se paguen desde ahora', 'ok');
+      setRate(null);
+      reload();
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+  };
+  const settle = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      const st = await api<Settlement>('/owner/settlements', 'POST', { shopId: paying!.id, reference });
+      toast(`Registrado: ${money(st.amount)} a ${st.shop_name}`, 'ok');
+      setPaying(null);
+      setReference('');
+      reload();
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+  };
+  const fixRefund = async (o: Order, manual: boolean) => {
+    try {
+      await api(`/owner/orders/${o.id}/refund`, 'POST', { manual });
+      toast(manual ? 'Marcado como devuelto' : 'Reembolso hecho', 'ok');
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+    reload();
+  };
+  const owed = data.shops.filter((s) => s.pending.orders > 0 || s.in_progress.orders > 0);
+  const totalOwed = data.shops.reduce((n, s) => n + s.pending.amount, 0);
+
+  return (
+    <main className="panel-body narrow">
+      <div className="panel-title">
+        <h1>Pagos</h1>
+      </div>
+      {!data.mode && (
+        <p className="notice notice-warn">
+          <TriangleAlert size={18} aria-hidden />
+          <span>El cobro en la app está desactivado: todos los pedidos se pagan en el local. Se activa con PICKGO_PAYMENTS.</span>
+        </p>
+      )}
+      {data.mode === 'simulado' && (
+        <p className="notice notice-warn">
+          <TriangleAlert size={18} aria-hidden />
+          <span>Marcha blanca: los pagos son de prueba y no mueven dinero. Los montos sirven para ensayar las liquidaciones.</span>
+        </p>
+      )}
+      <div className="kpis">
+        <Kpi label="Por transferir a locales" value={money(totalOwed)} tone="accent" />
+        <Kpi label="Comisiones ganadas" value={money(data.totals.fee)} hint={`${data.totals.orders} pedidos pagados en la app`} />
+        <Kpi label="Cobrado en la app" value={money(data.totals.gross)} />
+      </div>
+
+      <form className="card form" onSubmit={saveRate}>
+        <h2>Comisión de la plataforma</h2>
+        <p className="muted">
+          Porcentaje de cada pedido pagado en la app que se queda Pick&amp;Go. Recuerda que el proveedor de pagos también
+          cobra su propia comisión a tu cuenta: la tuya debe cubrirla.
+        </p>
+        <div className="inline-form">
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={50}
+            step={0.1}
+            value={rate ?? String(data.commission_bps / 100)}
+            onChange={(e) => setRate(e.target.value)}
+            aria-label="Comisión en porcentaje"
+            required
+          />
+          <button className="btn btn-dark" disabled={rate === null}>
+            Guardar
+          </button>
+        </div>
+        <small className="muted">Hoy: {percent(data.commission_bps)} por pedido.</small>
+      </form>
+
+      <h2 className="section">Por transferir</h2>
+      {owed.length === 0 && <Empty icon={<Wallet size={28} />} title="No hay montos pendientes" text="Aquí verás cuánto transferir a cada local." />}
+      <ul className="list">
+        {owed.map((s) => (
+          <li key={s.id} className="card shop-admin">
+            <span className="tile" aria-hidden>
+              {s.emoji}
+            </span>
+            <div className="grow">
+              <strong>{s.name}</strong>
+              <span className="muted">
+                {s.institution} · {s.campus_name}
+              </span>
+              <span className="muted">
+                {s.pending.orders} pedidos cerrados · cobrado {money(s.pending.gross)} · comisión {money(s.pending.fee)}
+                {s.in_progress.orders > 0 && ` · ${s.in_progress.orders} aún en curso`}
+              </span>
+            </div>
+            <div className="shop-admin-actions">
+              <strong className="price">{money(s.pending.amount)}</strong>
+              <button className="btn btn-primary btn-sm" disabled={s.pending.orders === 0} onClick={() => setPaying(s)}>
+                Registrar transferencia
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {data.failed_refunds.length > 0 && (
+        <>
+          <h2 className="section">Devoluciones con problemas</h2>
+          <ul className="list">
+            {data.failed_refunds.map((o) => (
+              <li key={o.id} className="card shop-admin">
+                <div className="grow">
+                  <strong>
+                    {o.code} · {money(o.total)}
+                  </strong>
+                  <span className="muted">
+                    {o.customer_name} · {o.shop_name}
+                  </span>
+                </div>
+                <div className="shop-admin-actions">
+                  <button className="btn btn-primary btn-sm" onClick={() => fixRefund(o, false)}>
+                    Reintentar
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => fixRefund(o, true)}>
+                    Ya lo devolví
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {data.settlements.length > 0 && (
+        <>
+          <h2 className="section">Transferencias registradas</h2>
+          <section className="card">
+            <ul className="lines">
+              {data.settlements.map((st) => (
+                <li key={st.id}>
+                  <span>
+                    {shortDay(st.created_at.slice(0, 10))} · {st.shop_name}
+                    {st.reference && ` · ${st.reference}`}
+                  </span>
+                  <span>
+                    <a href={`/api/owner/settlements/${st.id}.csv`} download aria-label={`Descargar detalle de la transferencia a ${st.shop_name}`}>
+                      <FileDown size={14} aria-hidden /> {money(st.amount)}
+                    </a>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
+
+      {paying && (
+        <Sheet title={`Transferencia a ${paying.name}`} onClose={() => setPaying(null)}>
+          <form className="form" onSubmit={settle}>
+            <p>
+              Transfiere <strong>{money(paying.pending.amount)}</strong> a la cuenta del local y luego regístralo aquí. Quedan
+              marcados como pagados sus {paying.pending.orders} pedidos cerrados, y el local verá el detalle.
+            </p>
+            <label>
+              <span>
+                Referencia <span className="optional">(opcional)</span>
+              </span>
+              <input value={reference} onChange={(e) => setReference(e.target.value)} maxLength={80} placeholder="N° de transferencia" />
+            </label>
+            <button className="btn btn-primary btn-block">Registrar {money(paying.pending.amount)}</button>
+          </form>
+        </Sheet>
+      )}
     </main>
   );
 }
