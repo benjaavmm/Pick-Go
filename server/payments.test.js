@@ -136,26 +136,34 @@ test('modo de prueba: el pedido llega al local solo cuando se paga, y se reembol
   clock = real;
 });
 
-test('Mercado Pago: crea el pago, confirma consultando a Mercado Pago y reembolsa', async () => {
-  // Servidor falso con la forma de la API de Mercado Pago.
+test('Mercado Pago (API de Orders): crea el cobro, confirma consultando a Mercado Pago y reembolsa', async () => {
+  // Servidor falso con la forma de la API de Orders de Mercado Pago (respuestas tomadas de su documentación).
   const calls = [];
-  const payments = new Map();
-  let nextId = 9000;
+  const orders = new Map();
+  let next = 1;
   const mp = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
-      calls.push({ method: req.method, url: req.url, auth: req.headers.authorization, idem: req.headers['x-idempotency-key'], body: body ? JSON.parse(body) : null });
+      calls.push({ method: req.method, url: req.url, idem: req.headers['x-idempotency-key'], body: body ? JSON.parse(body) : null });
       const send = (code, data) => (res.writeHead(code, { 'Content-Type': 'application/json' }), res.end(JSON.stringify(data)));
-      if (req.headers.authorization !== 'Bearer TEST-token') return send(401, { message: 'invalid token' });
+      if (req.headers.authorization !== 'Bearer TEST-token') return send(401, { errors: [{ code: 'unauthorized', message: 'invalid token' }] });
       const url = new URL(req.url, 'http://x');
-      if (req.method === 'POST' && url.pathname === '/checkout/preferences') return send(201, { id: 'pref-1', init_point: 'https://www.mercadopago.cl/checkout/v1/redirect?pref_id=pref-1' });
-      if (req.method === 'GET' && url.pathname === '/v1/payments/search')
-        return send(200, { results: [...payments.values()].filter((p) => p.external_reference === url.searchParams.get('external_reference')) });
-      const m = url.pathname.match(/^\/v1\/payments\/(\d+)(\/refunds)?$/);
-      if (m && req.method === 'GET') return payments.has(m[1]) ? send(200, payments.get(m[1])) : send(404, { message: 'not found' });
-      if (m && m[2] && req.method === 'POST') return send(201, { id: 77, payment_id: Number(m[1]) });
-      send(404, { message: 'ruta' });
+      if (req.method === 'POST' && url.pathname === '/v1/orders') {
+        const b = JSON.parse(body);
+        if (b.processing_mode !== 'manual') return send(400, { errors: [{ code: 'required_properties', message: 'Missing properties' }] });
+        const id = `ORDTST${String(next++).padStart(4, '0')}`;
+        const o = { ...b, id, status: 'created', status_detail: 'created', total_paid_amount: '0', currency: 'CLP', checkout_url: `https://www.mercadopago.cl/checkout/v1/redirect?order_id=${id}` };
+        orders.set(id, o);
+        return send(201, o);
+      }
+      const m = url.pathname.match(/^\/v1\/orders\/(\w+)(\/(refund|cancel))?$/);
+      const o = m && orders.get(m[1]);
+      if (!o) return send(404, { errors: [{ code: 'not_found', message: 'order not found' }] });
+      if (req.method === 'GET') return send(200, o);
+      if (m[3] === 'refund') Object.assign(o, { status: 'refunded', status_detail: 'refunded' });
+      if (m[3] === 'cancel') Object.assign(o, { status: 'canceled', status_detail: 'canceled' });
+      send(201, o);
     });
   });
   mp.listen(0);
@@ -167,60 +175,74 @@ test('Mercado Pago: crea el pago, confirma consultando a Mercado Pago y reembols
     { apiBase: `http://127.0.0.1:${mp.address().port}` },
   );
   assert.throws(() => createPayments({ PICKGO_PAYMENTS: 'mercadopago' }), /PICKGO_MP_ACCESS_TOKEN/);
-  const { db, base } = await start(provider);
+  const { db, app, base } = await start(provider);
   const shop = db.prepare("SELECT * FROM shops WHERE name = 'Pepepug'").get();
   const papas = db.prepare("SELECT id FROM products WHERE shop_id = ? AND name = 'Papas fritas'").get(shop.id).id;
   const student = await login(base, 'estudiante@pickgo.cl');
   const local = await login(base, 'pepepug@pickgo.cl');
+  const pay = (id, amount = '2000') => Object.assign(orders.get(id), { status: 'processed', status_detail: 'accredited', total_paid_amount: amount });
 
   const order = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T13:00', items: [{ productId: papas, qty: 1 }] })).body;
-  assert.equal(order.pay_url, 'https://www.mercadopago.cl/checkout/v1/redirect?pref_id=pref-1');
-  const pref = calls.find((c) => c.url === '/checkout/preferences').body;
-  assert.equal(pref.external_reference, String(order.id));
-  assert.equal(pref.items[0].unit_price, 2000);
-  assert.equal(pref.items[0].currency_id, 'CLP');
-  assert.equal(pref.notification_url, 'https://pickgo.test/api/payments/webhook');
-  assert.equal(pref.back_urls.success, `https://pickgo.test/pedidos/${order.id}?pago=1`);
+  const mpId = order.payment_ref;
+  assert.match(mpId, /^ORDTST/);
+  assert.equal(order.pay_url, `https://www.mercadopago.cl/checkout/v1/redirect?order_id=${mpId}`);
+  const sent = calls.find((c) => c.url === '/v1/orders' && c.method === 'POST');
+  assert.equal(sent.body.type, 'online');
+  assert.equal(sent.body.external_reference, String(order.id));
+  assert.equal(sent.body.total_amount, '2000');
+  assert.equal(sent.body.items[0].unit_price, '2000');
+  assert.equal(sent.body.expiration_time, 'PT15M');
+  assert.equal(sent.body.config.online.success_url, `https://pickgo.test/pedidos/${order.id}?pago=1`);
+  assert.ok(sent.idem);
 
-  // Un aviso sin firma válida se rechaza.
+  // Volver a abrir el pago reutiliza la misma order de Mercado Pago: nunca hay dos cobros abiertos.
+  assert.equal((await student('POST', `/api/orders/${order.id}/pay`)).body.pay_url, order.pay_url);
+  assert.equal(orders.size, 1);
+
+  // Avisos: sin firma válida se rechazan; con firma, se vuelve a consultar la order antes de aprobar.
   const hook = (id, headers = {}) =>
-    fetch(`${base}/api/payments/webhook?type=payment&data.id=${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: '{}' });
-  assert.equal((await hook('9001')).status, 401);
+    fetch(`${base}/api/payments/webhook?type=order&data.id=${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: '{}' });
   const signed = (id) => {
     const ts = '1700000000';
-    const v1 = crypto.createHmac('sha256', secret).update(`id:${id};request-id:req-1;ts:${ts};`).digest('hex');
+    const v1 = crypto.createHmac('sha256', secret).update(`id:${id.toLowerCase()};request-id:req-1;ts:${ts};`).digest('hex');
     return { 'x-signature': `ts=${ts},v1=${v1}`, 'x-request-id': 'req-1' };
   };
-
-  // Un pago aprobado por un monto distinto no aprueba el pedido.
-  const pay = (status, amount) => {
-    const id = String(++nextId);
-    payments.set(id, { id: Number(id), status, transaction_amount: amount, currency_id: 'CLP', external_reference: String(order.id) });
-    return id;
-  };
-  let id = pay('approved', 1);
-  assert.equal((await hook(id, signed(id))).status, 200);
+  assert.equal((await hook(mpId)).status, 401);
+  // Pagada por un monto distinto: no se aprueba.
+  pay(mpId, '1');
+  await hook(mpId, signed(mpId));
   await new Promise((r) => setTimeout(r, 100));
   assert.equal((await student('GET', `/api/orders/${order.id}`)).body.status, 'pago_pendiente');
-
-  // Rechazado: sigue pendiente. Aprobado por el monto correcto: llega al local.
-  payments.clear();
-  id = pay('rejected', 2000);
-  assert.equal((await student('POST', `/api/orders/${order.id}/payment/check`)).body.status, 'pago_pendiente');
-  id = pay('approved', 2000);
-  await hook(id, signed(id));
+  // Pagada por el monto correcto: llega al local.
+  pay(mpId);
+  assert.equal((await hook(mpId, signed(mpId))).status, 200);
   await new Promise((r) => setTimeout(r, 100));
   let o = (await student('GET', `/api/orders/${order.id}`)).body;
   assert.equal(o.status, 'recibido');
-  assert.equal(o.payment_ref, id);
+  assert.equal(o.payment_status, 'aprobado');
+  assert.equal((await local('GET', '/api/shop/orders')).body.orders.length, 1);
   // El navegador no puede aprobar pagos por su cuenta.
   assert.equal((await student('POST', `/api/orders/${order.id}/simulate-payment`, { approve: true })).status, 404);
 
   // El estudiante cancela antes de que lo acepten: reembolso en Mercado Pago, una sola vez.
   o = (await student('POST', `/api/orders/${order.id}/cancel`)).body;
   assert.equal(o.payment_status, 'reembolsado');
-  const refunds = calls.filter((c) => c.url === `/v1/payments/${id}/refunds`);
+  const refunds = calls.filter((c) => c.url === `/v1/orders/${mpId}/refund`);
   assert.equal(refunds.length, 1);
-  assert.equal(refunds[0].idem, `refund-${id}`);
-  assert.equal((await local('GET', '/api/shop/orders')).body.orders[0].status, 'cancelado');
+  assert.equal(refunds[0].idem, `refund-${mpId}`);
+  assert.equal(orders.get(mpId).status, 'refunded');
+
+  // Al volver del pago, la consulta del estudiante también aprueba (sin esperar el aviso).
+  const o2 = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T13:10', items: [{ productId: papas, qty: 1 }] })).body;
+  pay(o2.payment_ref);
+  assert.equal((await student('POST', `/api/orders/${o2.id}/payment/check`)).body.status, 'recibido');
+
+  // Un cobro que nadie paga se libera y se cierra en Mercado Pago.
+  const o3 = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T13:20', items: [{ productId: papas, qty: 1 }] })).body;
+  const real = clock;
+  clock = new Date(real.getTime() + 20 * 60000);
+  await app.locals.expireUnpaid();
+  clock = real;
+  assert.equal((await student('GET', `/api/orders/${o3.id}`)).body.status, 'cancelado');
+  assert.equal(orders.get(o3.payment_ref).status, 'canceled');
 });

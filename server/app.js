@@ -877,7 +877,8 @@ export function createApp(
       db.prepare("UPDATE orders SET status = 'cancelado', payment_status = 'expirado', cancel_reason = 'No se pudo iniciar el pago' WHERE id = ?").run(order.id);
       fail(502, 'No pudimos conectar con el servicio de pago. Intenta de nuevo en un momento.');
     }
-    res.status(201).json({ ...order, pay_url: checkout.url });
+    db.prepare('UPDATE orders SET payment_ref = ? WHERE id = ?').run(checkout.ref ?? '', order.id);
+    res.status(201).json({ ...getOrder(order.id), pay_url: checkout.url });
   });
 
   /** Entrega un pedido nuevo al local: aceptación automática, aviso en vivo y notificación push. */
@@ -952,9 +953,11 @@ export function createApp(
       .all(limit);
     for (const { id } of stale) {
       // Antes de liberar la hora se consulta una última vez por si el aviso del proveedor no llegó.
-      const found = await payments?.findPayment(id).catch(() => null);
+      const found = await payments?.findPayment(getOrder(id)).catch(() => null);
       const after = await applyPayment(id, found);
       if (after?.payment_status !== 'pendiente') continue;
+      // Se cierra el cobro en el proveedor para que el enlace ya no se pueda pagar.
+      await payments?.cancel(after.payment_ref).catch(() => {});
       db.prepare("UPDATE orders SET payment_status = 'expirado', cancel_reason = 'No se completó el pago' WHERE id = ?").run(id);
       setStatus(getOrder(id), 'cancelado', { paid: false, by: 'payment' });
     }
@@ -966,7 +969,11 @@ export function createApp(
   app.post('/api/orders/:id/pay', student, async (req, res) => {
     const o = myOrder(req);
     if (!payments || o.status !== 'pago_pendiente') fail(409, 'Este pedido no tiene un pago pendiente.');
-    const checkout = await payments.createCheckout(o).catch(() => fail(502, 'No pudimos conectar con el servicio de pago. Intenta de nuevo.'));
+    const checkout = await payments.createCheckout(o).catch((e) => {
+      console.warn('No se pudo iniciar el pago:', e.message);
+      fail(502, 'No pudimos conectar con el servicio de pago. Intenta de nuevo.');
+    });
+    db.prepare('UPDATE orders SET payment_ref = ? WHERE id = ?').run(checkout.ref ?? '', o.id);
     res.json({ pay_url: checkout.url });
   });
 
@@ -975,7 +982,7 @@ export function createApp(
     const o = myOrder(req);
     if (!payments || o.payment_method !== 'app' || o.payment_status !== 'pendiente') return res.json(o);
     if (limiter.hit(`paycheck|${o.id}`, 20, 60000)) return res.json(o);
-    const found = await payments.findPayment(o.id).catch(() => null);
+    const found = await payments.findPayment(o).catch(() => null);
     res.json(await applyPayment(o.id, found));
   });
 
@@ -993,7 +1000,7 @@ export function createApp(
     if (payments?.mode !== 'mercadopago') return res.status(404).json({ error: 'Ruta no encontrada.' });
     const dataId = String(req.query['data.id'] ?? req.body?.data?.id ?? '');
     const type = String(req.query.type ?? req.body?.type ?? '');
-    if (type !== 'payment' || !/^\d{1,20}$/.test(dataId)) return res.json({ ok: true });
+    if (type !== 'order' || !/^[A-Za-z0-9]{1,64}$/.test(dataId)) return res.json({ ok: true });
     if (!payments.verifyWebhook(req.headers, dataId)) return res.status(401).json({ error: 'Firma inválida.' });
     res.json({ ok: true });
     try {
@@ -1020,8 +1027,14 @@ export function createApp(
   });
 
   app.post('/api/orders/:id/cancel', student, async (req, res) => {
-    const o = myOrder(req);
+    let o = myOrder(req);
     if (o.status === 'pago_pendiente') {
+      // Si alcanzó a pagar justo antes de cancelar, el pago se aplica y el pedido se cancela con devolución (abajo).
+      const found = await payments?.findPayment(o).catch(() => null);
+      if (found?.status === 'approved') o = await applyPayment(o.id, found);
+    }
+    if (o.status === 'pago_pendiente') {
+      await payments?.cancel(o.payment_ref).catch(() => {});
       db.prepare("UPDATE orders SET payment_status = 'expirado' WHERE id = ? AND payment_status = 'pendiente'").run(o.id);
       return res.json(setStatus(getOrder(o.id), 'cancelado', { paid: false, by: 'payment' }));
     }

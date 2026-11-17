@@ -122,12 +122,13 @@ local la ve con su detalle. Se liquida lo entregado y lo no retirado; lo cancela
 | --- | --- |
 | sin definir | Sin cobro en la app: todo se paga en el local (con datos de demostración se usa `simulado`) |
 | `simulado` | **Marcha blanca**: flujo completo con una pantalla de pago de prueba. No se mueve dinero |
-| `mercadopago` | Cobro real con Mercado Pago Checkout Pro |
+| `mercadopago` | Cobro real con Mercado Pago Checkout Pro, con la API de Orders (`/v1/orders`) |
 
 Para Mercado Pago define además `PICKGO_MP_ACCESS_TOKEN` (de tu cuenta de Mercado Pago Developers; las credenciales
 de prueba permiten pagar con tarjetas de prueba), `PICKGO_PUBLIC_URL` (dirección `https://` pública de la app, a la
-que Mercado Pago envía los avisos de pago) y, recomendado, `PICKGO_MP_WEBHOOK_SECRET` (la clave secreta de las
-notificaciones). La app nunca confía en lo que diga el navegador ni el aviso: siempre vuelve a consultar el pago a
+que Mercado Pago envía los avisos de pago) y, recomendado, `PICKGO_MP_WEBHOOK_SECRET` (la firma secreta de las
+notificaciones). En el panel de Mercado Pago, en Configuración de Webhooks, usa la URL
+`https://TU-DIRECCION/api/payments/webhook` con el evento **Order (Mercado Pago)**. La app nunca confía en lo que diga el navegador ni el aviso: siempre vuelve a consultar el pago a
 Mercado Pago y revisa que el monto coincida.
 
 Ten en cuenta que Mercado Pago cobra su propia comisión a tu cuenta: la comisión de Pick&Go debe cubrirla.
@@ -179,8 +180,8 @@ cupos al crear cada pedido, así que no depende de lo que mande el navegador.
 
 Lo que falta o conviene saber antes de operar a gran escala:
 
-- **La integración con Mercado Pago no se ha probado contra Mercado Pago real.** Se probó contra un servidor que imita
-  su API; antes de cobrar de verdad hay que hacer una compra completa con las credenciales de prueba.
+- **Mercado Pago:** crear, reabrir, consultar y cancelar cobros está probado contra Mercado Pago real (credenciales de
+  prueba). El pago con tarjeta y la devolución se prueban desde un navegador con la cuenta de prueba.
 - **Las transferencias a los locales se hacen a mano.** La app calcula los montos y lleva el registro, pero el dinero
   lo transfiere quien opera la plataforma. Para que llegue directo a cada local hace falta el pago dividido del
   proveedor (marketplace).

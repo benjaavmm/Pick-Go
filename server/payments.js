@@ -3,7 +3,8 @@
  *
  *  - 'simulado'    Marcha blanca: el flujo completo funciona, pero el "pago" se aprueba o rechaza en una pantalla
  *                  de prueba de la propia app. No se mueve dinero.
- *  - 'mercadopago' Cobro real con Mercado Pago Checkout Pro. Requiere PICKGO_MP_ACCESS_TOKEN y PICKGO_PUBLIC_URL.
+ *  - 'mercadopago' Cobro real con Mercado Pago Checkout Pro (API de Orders). Requiere PICKGO_MP_ACCESS_TOKEN y
+ *                  PICKGO_PUBLIC_URL.
  *                  Con las credenciales de prueba de Mercado Pago se paga con tarjetas de prueba.
  *
  * Sin PICKGO_PAYMENTS no hay cobro en la app y todos los pedidos se pagan en el local.
@@ -35,7 +36,7 @@ function simulated() {
   return {
     mode: 'simulado',
     async createCheckout(order) {
-      return { url: `/pago-de-prueba/${order.id}` };
+      return { url: `/pago-de-prueba/${order.id}`, ref: `simulado-${order.id}` };
     },
     // En el modo simulado el resultado lo informa la pantalla de prueba; no hay nada que consultar afuera.
     async findPayment() {
@@ -44,6 +45,7 @@ function simulated() {
     async getPayment() {
       return null;
     },
+    async cancel() {},
     async refund(ref) {
       return { ok: true, ref: `simulado-${ref}` };
     },
@@ -53,6 +55,10 @@ function simulated() {
   };
 }
 
+/**
+ * Mercado Pago Checkout Pro con la API de Orders (/v1/orders).
+ * Cada pedido de Pick&Go crea una "order" de Mercado Pago, cuyo id se guarda en payment_ref.
+ */
 function mercadoPago({ token, publicUrl, apiBase, fetchImpl, webhookSecret }) {
   const call = async (method, path, body, headers = {}) => {
     const res = await fetchImpl(`${apiBase}${path}`, {
@@ -63,74 +69,78 @@ function mercadoPago({ token, publicUrl, apiBase, fetchImpl, webhookSecret }) {
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      const err = new Error(`Mercado Pago respondió ${res.status}: ${data?.message ?? 'sin detalle'}`);
+      const detail = data?.errors?.map((e) => e.message + (e.details ? ` (${e.details.join(', ')})` : '')).join('; ') ?? data?.message;
+      const err = new Error(`Mercado Pago respondió ${res.status}: ${detail ?? 'sin detalle'}`);
       err.status = res.status;
       throw err;
     }
     return data;
   };
   const link = (path) => new URL(path, publicUrl).href;
-  const toPayment = (p) =>
-    p && {
-      ref: String(p.id),
-      status: p.status, // approved | pending | in_process | rejected | cancelled | refunded | charged_back
-      amount: Number(p.transaction_amount),
-      currency: p.currency_id,
-      orderId: Number(p.external_reference),
+  const validRef = (ref) => /^[A-Za-z0-9]{1,64}$/.test(String(ref ?? ''));
+  /** Traduce una order de Mercado Pago al formato que usa la app. */
+  const toPayment = (o) =>
+    o && {
+      ref: String(o.id),
+      // processed + accredited = pago aprobado y acreditado.
+      status: o.status === 'processed' && o.status_detail === 'accredited' ? 'approved' : o.status,
+      amount: Number(o.total_paid_amount && Number(o.total_paid_amount) > 0 ? o.total_paid_amount : o.total_amount),
+      currency: o.currency,
+      orderId: Number(o.external_reference),
+      checkoutUrl: o.checkout_url,
     };
+  const getOrder = async (ref) => (validRef(ref) ? toPayment(await call('GET', `/v1/orders/${ref}`)) : null);
 
   return {
     mode: 'mercadopago',
     async createCheckout(order) {
-      const pref = await call(
+      // Si ya hay una order sin pagar para este pedido, se reutiliza: así nunca hay dos cobros abiertos.
+      if (validRef(order.payment_ref)) {
+        const prev = await getOrder(order.payment_ref).catch(() => null);
+        if (prev?.status === 'created' && prev.checkoutUrl) return { url: prev.checkoutUrl, ref: prev.ref };
+      }
+      const back = link(`/pedidos/${order.id}?pago=1`);
+      const created = await call(
         'POST',
-        '/checkout/preferences',
+        '/v1/orders',
         {
-          items: [
-            {
-              id: order.code,
-              title: `Pedido ${order.code} · ${order.shop_name}`,
-              quantity: 1,
-              currency_id: 'CLP',
-              unit_price: order.total,
-            },
-          ],
+          type: 'online',
+          processing_mode: 'manual',
           external_reference: String(order.id),
-          back_urls: {
-            success: link(`/pedidos/${order.id}?pago=1`),
-            pending: link(`/pedidos/${order.id}?pago=1`),
-            failure: link(`/pedidos/${order.id}?pago=1`),
-          },
-          auto_return: 'approved',
-          notification_url: link('/api/payments/webhook'),
-          statement_descriptor: 'PICKGO',
+          total_amount: String(order.total),
+          description: `Pedido ${order.code} · ${order.shop_name}`,
           // El enlace de pago vence junto con la reserva de la hora de retiro.
-          expires: true,
-          expiration_date_to: new Date(Date.now() + CHECKOUT_MINUTES * 60000).toISOString(),
-          payment_methods: { installments: 1 },
+          expiration_time: `PT${CHECKOUT_MINUTES}M`,
+          items: [{ title: `Pedido ${order.code} · ${order.shop_name}`, unit_price: String(order.total), quantity: 1, external_code: order.code }],
+          config: {
+            statement_descriptor: 'PICKGO',
+            payment_method: { max_installments: 1 },
+            online: { success_url: back, failure_url: back, pending_url: back, auto_return: 'approved' },
+          },
         },
-        // Evita crear dos preferencias si el mismo pedido se reintenta.
-        { 'X-Idempotency-Key': `pref-${order.id}-${order.code}-${Math.floor(Date.now() / 60000)}` },
+        { 'X-Idempotency-Key': `pickgo-${order.id}-${order.code}-${Date.now()}` },
       );
-      return { url: pref.init_point };
+      if (!created?.checkout_url) throw new Error('Mercado Pago no devolvió el enlace de pago.');
+      return { url: created.checkout_url, ref: String(created.id) };
     },
-    async findPayment(orderId) {
-      const r = await call('GET', `/v1/payments/search?external_reference=${encodeURIComponent(orderId)}&sort=date_created&criteria=desc`);
-      const list = (r?.results ?? []).map(toPayment);
-      return list.find((p) => p.status === 'approved') ?? list[0] ?? null;
+    async findPayment(order) {
+      return getOrder(order.payment_ref);
     },
     async getPayment(ref) {
-      if (!/^\d{1,20}$/.test(String(ref))) return null;
-      return toPayment(await call('GET', `/v1/payments/${ref}`));
+      return getOrder(ref);
+    },
+    /** Cancela una order sin pagar, para que el enlace ya no sirva. */
+    async cancel(ref) {
+      if (validRef(ref)) await call('POST', `/v1/orders/${ref}/cancel`, undefined, { 'X-Idempotency-Key': `cancel-${ref}` });
     },
     async refund(ref) {
-      const r = await call('POST', `/v1/payments/${ref}/refunds`, {}, { 'X-Idempotency-Key': `refund-${ref}` });
-      return { ok: true, ref: String(r?.id ?? '') };
+      const r = await call('POST', `/v1/orders/${ref}/refund`, undefined, { 'X-Idempotency-Key': `refund-${ref}` });
+      return { ok: true, ref: String(r?.id ?? ref) };
     },
     /**
      * Verifica la firma de una notificación (cabecera x-signature) si se configuró PICKGO_MP_WEBHOOK_SECRET.
      * Aunque la firma falte o no se configure, la app nunca confía en el contenido de la notificación:
-     * siempre vuelve a consultar el pago a Mercado Pago antes de darlo por aprobado.
+     * siempre vuelve a consultar la order a Mercado Pago antes de darla por pagada.
      */
     verifyWebhook(headers, dataId) {
       if (!webhookSecret) return true;
