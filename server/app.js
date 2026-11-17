@@ -311,6 +311,12 @@ export function createApp(
     events: db.prepare('SELECT status, at FROM order_events WHERE order_id = ? ORDER BY id').all(o.id),
   });
 
+  /**
+   * Lo que ve el local de un pedido. Mientras está abierto, sin el código de retiro: el código lo dice el estudiante
+   * al llegar, y así nadie puede entregar un pedido sin que esté presente quien lo pidió.
+   */
+  const forShop = (o) => (o && (o.status in RANK && o.status !== 'entregado') ? { ...o, code: null } : o);
+
   const getOrder = (id) => {
     const o = db.prepare(`${ORDER_SELECT} WHERE o.id = ?`).get(id);
     return o ? orderOut(o) : null;
@@ -342,7 +348,7 @@ export function createApp(
     hub.send(`user:${fresh.user_id}`, 'order', { type: 'update', order: fresh });
     // El local no se entera de los pedidos que nunca llegaron a pagarse.
     if (fresh.payment_status !== 'pendiente' && fresh.payment_status !== 'expirado')
-      hub.send(`shop:${fresh.shop_id}`, 'order', { type: 'update', order: fresh });
+      hub.send(`shop:${fresh.shop_id}`, 'order', { type: 'update', order: forShop(fresh) });
     if (push) {
       if (by === 'shop' && STUDENT_PUSH[status])
         push.toUser(fresh.user_id, {
@@ -887,7 +893,7 @@ export function createApp(
     const shop = getShop(order.shop_id);
     // Con aceptación automática el pedido entra directo a preparación y el estudiante recibe el aviso de inmediato.
     if (shop.auto_accept) order = setStatus(order, 'preparando');
-    hub.send(`shop:${shop.id}`, 'order', { type: 'new', order });
+    hub.send(`shop:${shop.id}`, 'order', { type: 'new', order: forShop(order) });
     push?.toShop(shop.id, {
       title: `Nuevo pedido para las ${order.slot.slice(11)}`,
       body: `${order.customer_name}: ${order.items.map((i) => `${i.qty}× ${i.name}`).join(', ')}`,
@@ -1112,7 +1118,7 @@ export function createApp(
          ORDER BY o.slot, o.id`,
       )
       .all(req.user.shop_id, today);
-    res.json({ today, orders: rows.map(orderOut) });
+    res.json({ today, orders: rows.map((o) => forShop(orderOut(o))) });
   });
 
   // Detalle de pedidos del período en CSV, para la contabilidad del local.
@@ -1171,23 +1177,32 @@ export function createApp(
       const reason = str(req.body?.reason, 120, 'El motivo', { required: false });
       db.prepare('UPDATE orders SET cancel_reason = ? WHERE id = ?').run(reason, o.id);
       // Si el estudiante pagó en la app, se le devuelve el dinero automáticamente.
-      return res.json(await refund(setStatus(getOrder(o.id), 'cancelado', { paid: o.paid })));
+      return res.json(forShop(await refund(setStatus(getOrder(o.id), 'cancelado', { paid: o.paid }))));
     }
     if (status === 'no_retirado') {
       if (o.status !== 'listo') fail(409, 'Solo un pedido listo se puede marcar como no retirado.');
       if (chileStamp(now()) <= o.slot) fail(409, 'Todavía no pasa la hora de retiro de este pedido.');
-      return res.json(setStatus(o, 'no_retirado'));
+      return res.json(forShop(setStatus(o, 'no_retirado')));
     }
+    // Entregar exige el código que muestra el estudiante (ver /api/shop/pickup).
+    if (status === 'entregado') fail(400, 'Para entregar, pídele al estudiante su código de retiro.');
     if (!(status in RANK) || RANK[status] <= RANK[o.status]) fail(400, 'Ese cambio de estado no es válido.');
-    // Al entregar, el pedido queda cobrado en el local.
-    res.json(setStatus(o, status, status === 'entregado' ? { paid: true } : {}));
+    res.json(forShop(setStatus(o, status)));
   });
 
   app.post('/api/shop/pickup', shopOnly, (req, res) => {
     const code = str(req.body?.code, 12, 'El código').toUpperCase().replace(/[^A-Z0-9]/g, '');
     // Tope de intentos: nadie puede probar códigos al azar desde una cuenta de local.
     if (limiter.hit(`pickup|${req.user.shop_id}`, 40, 60000)) fail(429, 'Demasiados intentos. Espera un momento.');
+    // Si se entrega desde la tarjeta de un pedido, el código tiene que ser el de ese pedido.
+    const expected = req.body?.orderId !== undefined ? shopOrder(req, Number(req.body.orderId)) : null;
+    if (expected && limiter.blocked(`pickup-order|${expected.id}`, 5))
+      fail(429, 'Demasiados códigos incorrectos para este pedido. Espera unos minutos o revisa el QR del estudiante.');
     const row = db.prepare('SELECT id FROM orders WHERE code = ? AND shop_id = ?').get(code, req.user.shop_id);
+    if (expected && row?.id !== expected.id) {
+      limiter.hit(`pickup-order|${expected.id}`, 5, 10 * 60000);
+      fail(409, `Ese código no corresponde al pedido de ${expected.customer_name}. Pídele que te muestre su código.`);
+    }
     if (!row) fail(404, `No hay un pedido con el código ${code} en este local.`);
     const o = getOrder(row.id);
     if (o.status === 'entregado') fail(409, `El pedido ${code} ya fue entregado.`);

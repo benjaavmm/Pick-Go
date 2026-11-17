@@ -1097,7 +1097,7 @@ export function OrderDetail() {
           <div className="pass-code">
             {qr && <img src={qr} alt={`Código QR del pedido ${o.code}`} width={200} height={200} />}
             <div>
-              <span>Muestra este código al retirar</span>
+              <span>Muestra este código en el local: sin él no te pueden entregar el pedido. No lo compartas.</span>
               <b>{o.code}</b>
             </div>
           </div>

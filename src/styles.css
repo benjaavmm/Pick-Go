@@ -2859,3 +2859,21 @@ th.num {
 .policy strong {
   color: var(--ink);
 }
+
+.order-ref {
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  padding: 4px 9px;
+  border-radius: 9px;
+  white-space: nowrap;
+}
+.code-input {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 1.5rem;
+  letter-spacing: 0.18em;
+  text-align: center;
+  text-transform: uppercase;
+}

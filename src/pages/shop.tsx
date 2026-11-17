@@ -203,7 +203,7 @@ function RejectSheet({ o, onClose, onConfirm }: { o: Order; onClose: () => void;
   const [other, setOther] = useState('');
   const custom = reason === '';
   return (
-    <Sheet title={`${o.status === 'recibido' ? 'Rechazar' : 'Cancelar'} pedido ${o.code}`} onClose={onClose}>
+    <Sheet title={`${o.status === 'recibido' ? 'Rechazar' : 'Cancelar'} pedido de ${o.customer_name}`} onClose={onClose}>
       <p className="muted">
         Le avisaremos a {o.customer_name} con el motivo.
         {o.payment_method === 'app' && ' Como pagó en la app, le devolveremos el dinero automáticamente.'}
@@ -240,7 +240,67 @@ function printOrder(id: number) {
   window.print();
 }
 
-function OrderCard({ o, onMove, onReject }: { o: Order; onMove: (o: Order, to: Status) => void; onReject: (o: Order) => void }) {
+/** Entregar exige el código que muestra el estudiante: se escribe o se escanea su QR. */
+function DeliverSheet({ o, onClose, onDeliver }: { o: Order; onClose: () => void; onDeliver: (code: string) => Promise<boolean> }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const submit = async (value: string) => {
+    setBusy(true);
+    if (await onDeliver(value)) onClose();
+    else setBusy(false);
+  };
+  if (scanning) return <Scanner onClose={() => setScanning(false)} onCode={(c) => { setScanning(false); void submit(c); }} />;
+  return (
+    <Sheet title={`Entregar a ${o.customer_name}`} onClose={onClose}>
+      <p>
+        Pídele a <strong>{o.customer_name}</strong> su código de retiro. Lo tiene en su pedido, en la app. Sin el código
+        correcto no se puede entregar.
+      </p>
+      <form
+        className="form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit(code);
+        }}
+      >
+        <label>
+          Código de retiro
+          <input
+            className="code-input"
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            placeholder="PG····"
+            maxLength={10}
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            autoFocus
+            required
+          />
+        </label>
+        <button className="btn btn-primary btn-block" disabled={busy || code.trim().length < 4}>
+          {busy ? 'Revisando…' : 'Confirmar entrega'}
+        </button>
+        <button type="button" className="btn btn-soft btn-block" onClick={() => setScanning(true)}>
+          <ScanLine size={20} aria-hidden /> Escanear su QR
+        </button>
+      </form>
+    </Sheet>
+  );
+}
+
+function OrderCard({
+  o,
+  onMove,
+  onReject,
+  onDeliver,
+}: {
+  o: Order;
+  onMove: (o: Order, to: Status) => void;
+  onReject: (o: Order) => void;
+  onDeliver: (o: Order) => void;
+}) {
   const next = NEXT[o.status];
   const when = eta(o.slot);
   const noShow = o.status === 'listo' && minutesUntil(o.slot) <= -10;
@@ -249,8 +309,8 @@ function OrderCard({ o, onMove, onReject }: { o: Order; onMove: (o: Order, to: S
       <header>
         <b className="slot-time">{o.slot.slice(11)}</b>
         <span className={`eta ${when.late ? 'late' : ''}`}>{when.text}</span>
-        <span className="code-chip">{o.code}</span>
-        <button className="icon-btn no-print" aria-label={`Imprimir comanda ${o.code}`} onClick={() => printOrder(o.id)}>
+        <span className="order-ref">N.º {o.id}</span>
+        <button className="icon-btn no-print" aria-label={`Imprimir comanda de ${o.customer_name}`} onClick={() => printOrder(o.id)}>
           <Printer size={18} />
         </button>
       </header>
@@ -271,14 +331,14 @@ function OrderCard({ o, onMove, onReject }: { o: Order; onMove: (o: Order, to: S
       </p>
       <div className="ticket-actions">
         {next && (
-          <button className="btn btn-primary" onClick={() => onMove(o, next.to)}>
+          <button className="btn btn-primary" onClick={() => (next.to === 'entregado' ? onDeliver(o) : onMove(o, next.to))}>
             {next.label}
           </button>
         )}
         {noShow ? (
           <button
             className="btn btn-ghost"
-            onClick={() => window.confirm(`¿Marcar el pedido ${o.code} como no retirado?`) && onMove(o, 'no_retirado')}
+            onClick={() => window.confirm(`¿Marcar el pedido de ${o.customer_name} como no retirado?`) && onMove(o, 'no_retirado')}
           >
             No vino
           </button>
@@ -340,15 +400,19 @@ export function ShopOrders() {
     }
     reload();
   };
-  const deliver = async (value: string) => {
+  const [delivering, setDelivering] = useState<Order | null>(null);
+  const deliver = async (value: string, orderId?: number) => {
+    let ok = false;
     try {
-      const o = await api<Order>('/shop/pickup', 'POST', { code: value });
-      toast(`Pedido ${o.code} entregado a ${o.customer_name}`, 'ok');
+      const o = await api<Order>('/shop/pickup', 'POST', { code: value, orderId });
+      toast(`Pedido entregado a ${o.customer_name}`, 'ok');
       setCode('');
+      ok = true;
     } catch (err) {
       toast(errorText(err), 'error');
     }
     reload();
+    return ok;
   };
   const pickup = (e: FormEvent) => {
     e.preventDefault();
@@ -420,7 +484,7 @@ export function ShopOrders() {
             </h2>
             {by(c.status).length === 0 && <p className="muted">{c.empty}</p>}
             {by(c.status).map((o) => (
-              <OrderCard key={o.id} o={o} onMove={move} onReject={setRejecting} />
+              <OrderCard key={o.id} o={o} onMove={move} onReject={setRejecting} onDeliver={setDelivering} />
             ))}
           </section>
         ))}
@@ -440,6 +504,7 @@ export function ShopOrders() {
           </ul>
         </details>
       )}
+      {delivering && <DeliverSheet o={delivering} onClose={() => setDelivering(null)} onDeliver={(c) => deliver(c, delivering.id)} />}
       {rejecting && (
         <RejectSheet
           o={rejecting}

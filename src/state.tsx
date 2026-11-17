@@ -300,9 +300,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const o = detail.order;
       if (role === 'shop') {
         if (detail.type === 'new') {
-          toast(`Nuevo pedido ${o.code} para las ${o.slot.slice(11)}`, 'ok');
+          toast(`Nuevo pedido de ${o.customer_name} para las ${o.slot.slice(11)}`, 'ok');
           beep();
-        } else if (o.status === 'cancelado') toast(`El pedido ${o.code} fue cancelado`, 'info');
+        } else if (o.status === 'cancelado') toast(`El pedido de ${o.customer_name} fue cancelado`, 'info');
       } else if (o.status !== 'recibido' && o.status !== 'entregado') {
         const text =
           o.status === 'listo'

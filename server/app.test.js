@@ -324,7 +324,12 @@ test('calificación, puntualidad, pedidos no retirados y avisos push', async () 
   assert.match(pushed.at(-1).body, /está listo/);
   // Todavía no pasa la hora de retiro: no se puede marcar como no retirado.
   assert.equal((await shopUser('POST', `/api/shop/orders/${first.id}/status`, { status: 'no_retirado' })).status, 409);
-  let r = await shopUser('POST', `/api/shop/orders/${first.id}/status`, { status: 'entregado' });
+  // Entregar sin el código no se puede; con el código de otro pedido, tampoco.
+  assert.equal((await shopUser('POST', `/api/shop/orders/${first.id}/status`, { status: 'entregado' })).status, 400);
+  const board = (await shopUser('GET', '/api/shop/orders')).body.orders.find((o) => o.id === first.id);
+  assert.equal(board.code, null);
+  assert.equal((await shopUser('POST', '/api/shop/pickup', { code: 'PGZZZZ', orderId: first.id })).status, 409);
+  let r = await shopUser('POST', '/api/shop/pickup', { code: first.code, orderId: first.id });
   assert.equal(r.body.on_time, true);
   assert.equal((await student('POST', `/api/orders/${first.id}/rate`, { rating: 9 })).status, 400);
   r = await student('POST', `/api/orders/${first.id}/rate`, { rating: 4, comment: 'Rápido y rico' });
@@ -563,4 +568,22 @@ test('días de atención, motivo al rechazar y exportación de pedidos', async (
   assert.match(csv, /"Fecha";"Hora de retiro";"Código"/);
   assert.match(csv, new RegExp(`"${o.code}";"Estudiante Demo";"1x Menú del día";"4200";"Cancelado"`));
   assert.equal((await fetch(`${base}/api/shop/orders.csv`, { headers: { Cookie: student.cookie() } })).status, 403);
+});
+
+test('el local no ve el código de retiro y tiene un tope de intentos por pedido', async () => {
+  const shopUser = await login('casino@pickgo.cl');
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Casino'").get();
+  const student = await login('estudiante@pickgo.cl');
+  const o = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T16:00', items: [{ productId: productOf(shop.id, 'Fruta de estación').id, qty: 1 }] })).body;
+  assert.match(o.code, /^PG/);
+  const seen = (await shopUser('GET', '/api/shop/orders')).body.orders.find((x) => x.id === o.id);
+  assert.equal(seen.code, null);
+  assert.equal((await shopUser('POST', `/api/shop/orders/${o.id}/status`, { status: 'preparando' })).body.code, null);
+  for (let i = 0; i < 5; i++) assert.equal((await shopUser('POST', '/api/shop/pickup', { code: `PGXX${i}A`, orderId: o.id })).status, 409);
+  // Bloqueado por un rato, incluso con el código correcto.
+  assert.equal((await shopUser('POST', '/api/shop/pickup', { code: o.code, orderId: o.id })).status, 429);
+  // El código escaneado en el mostrador (sin elegir pedido) sigue funcionando.
+  const done = (await shopUser('POST', '/api/shop/pickup', { code: o.code })).body;
+  assert.equal(done.status, 'entregado');
+  assert.equal(done.code, o.code);
 });
