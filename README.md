@@ -180,8 +180,9 @@ cupos al crear cada pedido, así que no depende de lo que mande el navegador.
 
 Lo que falta o conviene saber antes de operar a gran escala:
 
-- **Mercado Pago:** crear, reabrir, consultar y cancelar cobros está probado contra Mercado Pago real (credenciales de
-  prueba). El pago con tarjeta y la devolución se prueban desde un navegador con la cuenta de prueba.
+- **Mercado Pago:** probado de punta a punta contra Mercado Pago real con credenciales de prueba (crear, reabrir,
+  pagar con tarjeta de prueba, aprobar, devolver y cancelar). Los avisos por webhook se prueban una vez publicada,
+  porque Mercado Pago necesita una dirección pública.
 - **Las transferencias a los locales se hacen a mano.** La app calcula los montos y lleva el registro, pero el dinero
   lo transfiere quien opera la plataforma. Para que llegue directo a cada local hace falta el pago dividido del
   proveedor (marketplace).
