@@ -18,7 +18,7 @@ function AuthShell({ children, hero }: { children: ReactNode; hero?: ReactNode }
               <br />
               <mark>Retira sin fila.</mark>
             </h1>
-            <p>Pide en los locales de tu sede y retira justo en tu recreo, sin fila. También con tu beca Junaeb.</p>
+            <p>Pide en los locales de tu sede y retira justo en tu recreo, sin fila.</p>
             <ol className="steps">
               <li>
                 <Coffee size={20} aria-hidden />
@@ -31,7 +31,7 @@ function AuthShell({ children, hero }: { children: ReactNode; hero?: ReactNode }
                 <ShoppingBag size={20} aria-hidden />
                 <span>
                   <strong>Pide desde la sala</strong>
-                  Paga en la app o con tu beca Junaeb al retirar.
+                  Arma tu pedido en segundos.
                 </span>
               </li>
               <li>
@@ -500,6 +500,7 @@ export function Terms({ back = '/' }: { back?: string }) {
             Si eliges pagar con tu beca Junaeb, pagas en el mesón al retirar, con la app de su operador. {BRAND} no cobra la
             beca ni ve tu saldo. Si la beca no pasa, pagas con otro medio.
           </li>
+          <li>Si no retiras un pedido que ibas a pagar al retirar, por 30 días solo podrás pagar en la app.</li>
           <li>Si acumulas tres pedidos sin retirar en 30 días, tu cuenta no podrá hacer pedidos nuevos por un tiempo.</li>
           <li>Tu cuenta es personal: no la compartas ni la uses para pedir a nombre de otra persona.</li>
         </ul>
@@ -510,6 +511,7 @@ export function Terms({ back = '/' }: { back?: string }) {
           <li>Mantén tu menú, precios, horarios y disponibilidad al día.</li>
           <li>Acepta solo los pedidos que puedas tener listos a la hora de retiro, y avisa cuando estén listos.</li>
           <li>Lo pagado en la app se te transfiere descontada la comisión de {BRAND}; los pedidos que aceptes pagar al retirar los cobras tú.</li>
+          <li>Las promociones y la tarjeta de sellos las define y las paga {BRAND}: recibes siempre el precio completo de tus productos.</li>
           <li>Activa la beca Junaeb solo si estás adherido a su operador en tu sede. Esos pedidos los cobras tú, con el sistema del operador.</li>
           <li>La institución puede suspender un local que no cumpla.</li>
         </ul>
@@ -535,8 +537,8 @@ const FAQ: [string, string][] = [
   ['¿Cómo retiro mi pedido?', 'Abre el pedido en la app y muestra el código QR o el código de seis caracteres. El local lo escanea o lo escribe y te entrega tu pedido.'],
   ['¿Puedo cancelar?', 'Sí, mientras el local no haya aceptado el pedido. Después de eso ya no se puede cancelar desde la app.'],
   ['¿Qué pasa si no retiro un pedido?', 'El local lo preparó para ti, así que lo marca como no retirado. Si acumulas tres en 30 días, tu cuenta no puede hacer pedidos nuevos hasta que alguno salga de ese período.'],
-  ['¿Cómo pago?', 'Pagas en la app al confirmar el pedido, y el local lo recibe apenas se aprueba el pago. Algunos locales también permiten pagar al retirar. Si el local rechaza tu pedido o cancelas antes de que lo acepte, te devolvemos el pago.'],
-  ['¿Puedo pagar con mi beca Junaeb?', 'Sí, en los locales que dicen «Junaeb». Eliges «Beca Junaeb al retirar» y pagas en el mesón con la app de tu beca: Ticket Junaeb (Edenred) en regiones o Pluxee Chile en la Región Metropolitana. Como tu pedido ya está listo y el monto es exacto, pagar toma segundos. La beca no se puede cobrar dentro de la app: Junaeb no lo permite a apps externas.'],
+  ['¿Cómo pago?', 'Pagas en la app al confirmar el pedido, y el local lo recibe apenas se aprueba el pago. Algunos locales también permiten pagar al retirar, en efectivo o con Junaeb: puedes tener un pedido así a la vez, y si no lo retiras, por 30 días solo podrás pagar en la app. Si el local rechaza tu pedido o cancelas antes de que lo acepte, te devolvemos el pago.'],
+  ['¿Puedo pagar con mi beca Junaeb?', 'Sí, en los locales que dicen «Junaeb». Eliges «Junaeb al retirar» y pagas en el mesón con la app de tu beca: Ticket Junaeb (Edenred) en regiones o Pluxee Chile en la Región Metropolitana. Como tu pedido ya está listo y el monto es exacto, pagar toma segundos. La beca no se puede cobrar dentro de la app: Junaeb no lo permite a apps externas.'],
   ['¿Para qué sirven mis recreos?', 'Si guardas tus recreos en tu perfil, al pedir te proponemos retirar justo cuando empieza el próximo, y en las horas de retiro marcamos las que calzan con tu horario. Así llegas, retiras y te queda el recreo para comer.'],
   ['¿Qué pasa si cierro la app antes de pagar?', 'Tu pedido queda guardado con la hora reservada por unos minutos. Ábrelo desde Pedidos y toca Pagar. Si no se paga a tiempo, la reserva se libera sola y no se cobra nada.'],
   ['No me llegan los avisos', `Actívalos en tu perfil. En iPhone primero debes agregar ${BRAND} a tu pantalla de inicio y abrirla desde ahí. Con la app abierta, los avisos llegan siempre.`],

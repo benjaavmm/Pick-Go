@@ -591,14 +591,20 @@ test('el local no ve el código de retiro y tiene un tope de intentos por pedido
 
 test('promociones por horario, tarjeta de sellos y precio calculado por el servidor', async () => {
   const shopUser = await login('sangucheria@gobite.cl');
+  const owner = await login('plataforma@gobite.cl');
   const shop = db.prepare("SELECT * FROM shops WHERE name = 'La Sanguchería'").get();
   const papas = productOf(shop.id, 'Papas fritas'); // $1.900
   const empanada = productOf(shop.id, 'Empanada de pino'); // $1.800
+  // Las promociones y los premios los define la plataforma, no el local.
+  assert.equal((await shopUser('PATCH', '/api/shop/me', { promos: [{ from: 900, to: 960, percent: 10 }] })).status, 403);
+  assert.equal((await shopUser('PATCH', '/api/shop/me', { loyalty_every: 3 })).status, 403);
+  assert.equal((await shopUser('PATCH', `/api/owner/shops/${shop.id}`, { promos: [] })).status, 403);
   // Validaciones: traslapes, porcentajes fuera de rango y premios sin valor.
-  assert.equal((await shopUser('PATCH', '/api/shop/me', { promos: [{ from: 900, to: 960, percent: 10 }, { from: 930, to: 1000, percent: 5 }] })).status, 400);
-  assert.equal((await shopUser('PATCH', '/api/shop/me', { promos: [{ from: 900, to: 960, percent: 80 }] })).status, 400);
-  assert.equal((await shopUser('PATCH', '/api/shop/me', { loyalty_every: 3, loyalty_max: 0 })).status, 400);
-  let r = await shopUser('PATCH', '/api/shop/me', { promos: [{ from: 900, to: 960, percent: 10 }], loyalty_every: 3, loyalty_max: 1500 });
+  const setShop = (body) => owner('PATCH', `/api/owner/shops/${shop.id}`, body);
+  assert.equal((await setShop({ promos: [{ from: 900, to: 960, percent: 10 }, { from: 930, to: 1000, percent: 5 }] })).status, 400);
+  assert.equal((await setShop({ promos: [{ from: 900, to: 960, percent: 80 }] })).status, 400);
+  assert.equal((await setShop({ loyalty_every: 3, loyalty_max: 0 })).status, 400);
+  let r = await setShop({ promos: [{ from: 900, to: 960, percent: 10 }], loyalty_every: 3, loyalty_max: 1500 });
   assert.equal(r.status, 200);
   assert.deepEqual(r.body.promos, [{ from: 900, to: 960, percent: 10 }]);
 
@@ -614,7 +620,7 @@ test('promociones por horario, tarjeta de sellos y precio calculado por el servi
   let q = (await st('POST', '/api/orders/quote', { shopId: shop.id, slot: '2026-11-13T15:00', items })).body;
   assert.deepEqual([q.subtotal, q.promo_discount, q.total], [3800, 380, 3420]);
   const o1 = (await st('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T15:00', items })).body;
-  assert.deepEqual([o1.subtotal, o1.promo_discount, o1.total], [3800, 380, 3420]);
+  assert.deepEqual([o1.subtotal, o1.promo_discount, o1.total, o1.funded_discount], [3800, 380, 3420, 380]);
   assert.equal((await st('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T16:00', items, useReward: true })).status, 409);
 
   // Tres pedidos entregados = un premio.
@@ -629,20 +635,24 @@ test('promociones por horario, tarjeta de sellos y precio calculado por el servi
   // El premio cubre el producto más caro hasta el tope ($1.500 de las papas de $1.900).
   const withReward = { shopId: shop.id, slot: '2026-11-13T16:30', items: [{ productId: papas.id, qty: 1 }, { productId: empanada.id, qty: 1 }], useReward: true };
   const o4 = (await st('POST', '/api/orders', withReward)).body;
-  assert.deepEqual([o4.subtotal, o4.reward_discount, o4.total], [3700, 1500, 2200]);
+  assert.deepEqual([o4.subtotal, o4.reward_discount, o4.total, o4.funded_discount], [3700, 1500, 2200, 1500]);
   // El premio ya está ocupado por un pedido en curso: no se puede usar dos veces.
   assert.equal((await st('POST', '/api/orders', { ...withReward, slot: '2026-11-13T16:40' })).status, 409);
   // Si ese pedido se cancela, el premio vuelve.
   await st('POST', `/api/orders/${o4.id}/cancel`);
   assert.equal((await st('POST', '/api/orders/quote', withReward)).body.loyalty.rewards, 1);
 
-  // Impacto para el local.
+  // Impacto para el local: sus ventas cuentan a precio completo, porque el descuento lo pone la plataforma.
   const impact = (await shopUser('GET', '/api/shop/impact')).body;
   assert.equal(impact.delivered >= 3, true);
-  assert.equal(impact.promo_orders >= 1, true);
+  assert.equal('promo_given' in impact, false);
   assert.equal(impact.queue_minutes_saved, impact.delivered * impact.queue_minutes_per_order);
   assert.equal((await st('GET', '/api/shop/impact')).status, 403);
-  await shopUser('PATCH', '/api/shop/me', { promos: [], loyalty_every: 0 });
+  // La plataforma ve cuánto puso en descuentos en este local.
+  const mine = (await owner('GET', '/api/owner/shops')).body.shops.find((x) => x.id === shop.id);
+  assert.equal(mine.discounts, 380);
+  assert.deepEqual(mine.promos, [{ from: 900, to: 960, percent: 10 }]);
+  await setShop({ promos: [], loyalty_every: 0 });
 });
 
 test('tiempo de preparación por producto y favoritos', async () => {

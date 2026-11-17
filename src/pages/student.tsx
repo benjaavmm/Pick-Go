@@ -266,8 +266,6 @@ export function Home() {
   useTick();
   const active = (orders.data ?? []).filter((o) => isOpenOrder(o.status));
   const last = (orders.data ?? []).find((o) => o.status === 'entregado');
-  const [onlyBaes, setOnlyBaes] = useState(false);
-  const anyBaes = (shops.data ?? []).some((s) => s.accepts_baes);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchHit[] | null>(null);
   const searching = query.trim().length >= 2;
@@ -290,10 +288,10 @@ export function Home() {
   // Primero los locales donde se puede retirar antes.
   const sorted = useMemo(
     () =>
-      [...(shops.data ?? [])]
-        .filter((s) => !onlyBaes || s.accepts_baes)
-        .sort((a, b) => (a.next_slot?.slot ?? '9999').localeCompare(b.next_slot?.slot ?? '9999') || a.name.localeCompare(b.name)),
-    [shops.data, onlyBaes],
+      [...(shops.data ?? [])].sort(
+        (a, b) => (a.next_slot?.slot ?? '9999').localeCompare(b.next_slot?.slot ?? '9999') || a.name.localeCompare(b.name),
+      ),
+    [shops.data],
   );
 
   return (
@@ -390,16 +388,7 @@ export function Home() {
         </Link>
       )}
 
-      {!searching && (
-        <div className="section-row">
-          <h2 className="section">Locales en tu sede</h2>
-          {anyBaes && (
-            <button className={`filter-chip ${onlyBaes ? 'on' : ''}`} aria-pressed={onlyBaes} onClick={() => setOnlyBaes(!onlyBaes)}>
-              <Wallet size={15} aria-hidden /> Aceptan Junaeb
-            </button>
-          )}
-        </div>
-      )}
+      {!searching && <h2 className="section">Locales en tu sede</h2>}
       {shops.error && <ErrorBox text={shops.error} retry={shops.reload} />}
       {!shops.data && !shops.error && <Loading />}
       {shops.data?.length === 0 && (
@@ -428,7 +417,6 @@ export function Home() {
                         <MapPin size={13} aria-hidden /> {s.location}
                       </span>
                     )}
-                    {s.accepts_baes && <span className="baes-tag">Junaeb</span>}
                   </span>
                 </span>
                 {s.paused || !s.next_slot ? (
@@ -604,6 +592,11 @@ export function ShopPage() {
             <span>
               <Clock size={13} aria-hidden /> {hhmm(shop.opens)} a {hhmm(shop.closes)}
             </span>
+            {shop.accepts_baes && (
+              <span>
+                <Wallet size={13} aria-hidden /> Acepta Junaeb
+              </span>
+            )}
           </p>
         </div>
       </section>
@@ -629,14 +622,6 @@ export function ShopPage() {
         </p>
       )}
 
-      {shop.accepts_baes && (
-        <p className="notice notice-baes">
-          <Wallet size={18} aria-hidden />
-          <span>
-            Acepta tu <strong>beca Junaeb</strong>: pagas al retirar con {baesName(shop.baes_operator)}.
-          </span>
-        </p>
-      )}
       {shop.promos.length > 0 && !shop.paused && (
         <section className="promo-strip" aria-label="Promociones">
           <Percent size={18} aria-hidden />
@@ -803,11 +788,17 @@ export function Checkout() {
   const acceptsBaes = !!shopData?.accepts_baes;
   const [slot, setSlot] = useState('');
   const [proposed, setProposed] = useState('');
-  // Medios disponibles en este local, en orden: en la app, beca Junaeb y en el local.
-  const methods: PaymentMethod[] = [...(payments ? (['app'] as const) : []), ...(acceptsBaes ? (['junaeb'] as const) : []), ...(payAtShop ? (['local'] as const) : [])];
+  // Pagar al retirar exige confianza (un pedido sin pagar a la vez y sin pedidos sin retirar recientes).
+  const payLater = !user!.pay_later_problem;
+  // Medios disponibles en este local, en orden: en la app, Junaeb y en el local.
+  const methods: PaymentMethod[] = [
+    ...(payments ? (['app'] as const) : []),
+    ...(acceptsBaes && payLater ? (['junaeb'] as const) : []),
+    ...(payAtShop && payLater ? (['local'] as const) : []),
+  ];
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   // Quien tiene beca parte con ella propuesta; si no, el primer medio disponible.
-  const payMethod: PaymentMethod = method && methods.includes(method) ? method : user!.baes && acceptsBaes ? 'junaeb' : methods[0] ?? 'local';
+  const payMethod: PaymentMethod = method && methods.includes(method) ? method : user!.baes && methods.includes('junaeb') ? 'junaeb' : methods[0] ?? 'local';
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -1002,10 +993,8 @@ export function Checkout() {
                 <Wallet size={22} />
               </span>
               <span className="grow">
-                Beca Junaeb al retirar
-                <small>
-                  Pagas {money(total)} en el mesón con {baesName(shopData?.baes_operator)}. Tu pedido ya está listo: solo pagas y te vas.
-                </small>
+                Junaeb al retirar
+                <small>En el mesón, con {baesName(shopData?.baes_operator)}. Tu pedido ya está listo: pagas y te vas.</small>
               </span>
               <span className="radio" aria-hidden>
                 {payMethod === 'junaeb' && <Check size={14} strokeWidth={3} />}
@@ -1033,7 +1022,7 @@ export function Checkout() {
             <Wallet size={22} />
           </span>
           <div className="grow">
-            <strong>Pagas con tu beca Junaeb al retirar</strong>
+            <strong>Pagas con Junaeb al retirar</strong>
             <p className="muted">Pagas {money(total)} en el mesón con {baesName(shopData?.baes_operator)}.</p>
           </div>
         </section>
@@ -1047,6 +1036,9 @@ export function Checkout() {
             <p className="muted">Al retirar pagas {money(total)} con el medio que acepte el local.</p>
           </div>
         </section>
+      )}
+      {payments && user!.pay_later_problem && (acceptsBaes || shopData?.pay_at_shop) && (
+        <p className="muted small">{user!.pay_later_problem}</p>
       )}
       {user!.can_order === false && (
         <p className="notice notice-warn">
@@ -1271,7 +1263,7 @@ function BaesPay({ o }: { o: Order }) {
       <header>
         <Wallet size={22} aria-hidden />
         <div className="grow">
-          <span className="baes-kicker">Beca Junaeb · {op.name}</span>
+          <span className="baes-kicker">Pago con Junaeb · {op.name}</span>
           <strong>{ready ? `Abre ${op.app} y paga ${money(o.total)}` : `Al retirar pagas ${money(o.total)}`}</strong>
         </div>
       </header>
@@ -1280,7 +1272,7 @@ function BaesPay({ o }: { o: Order }) {
           <li key={t}>{t}</li>
         ))}
       </ol>
-      <p className="muted small">Si la beca no pasa (por ejemplo, sin saldo), pagas con otro medio en el mismo mesón.</p>
+      <p className="muted small">Si no pasa (por ejemplo, sin saldo), pagas con otro medio en el mismo mesón.</p>
     </section>
   );
 }

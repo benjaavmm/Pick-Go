@@ -1,11 +1,12 @@
-import { Building2, FileDown, KeyRound, Plus, TriangleAlert, UserCog, UserPlus, Wallet } from 'lucide-react';
+import { Building2, FileDown, KeyRound, Percent, Plus, Store, TriangleAlert, UserCog, UserPlus, Wallet } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { api, errorText, money, percent, shortDay, type Order, type PayoutSummary, type Settlement } from '../lib';
+import { api, errorText, money, percent, promoText, shortDay, type Order, type PayoutSummary, type Promo, type Settlement, type Totals } from '../lib';
 import { useApp, useLoad } from '../state';
 import { BRAND } from '../brand';
 import { Empty, Kpi, Loading, Logo, Sheet } from '../ui';
 import { AccountSettings } from './account';
+import { LoyaltyEditor, PromosEditor } from './shop';
 
 interface Institution {
   id: number;
@@ -33,6 +34,10 @@ export function OwnerLayout() {
           <NavLink to="/plataforma" end>
             <Building2 size={20} aria-hidden />
             Instituciones
+          </NavLink>
+          <NavLink to="/plataforma/locales">
+            <Store size={20} aria-hidden />
+            Locales
           </NavLink>
           <NavLink to="/plataforma/pagos">
             <Wallet size={20} aria-hidden />
@@ -198,10 +203,138 @@ export function OwnerInstitutions() {
   );
 }
 
+interface OwnerShop {
+  id: number;
+  name: string;
+  emoji: string;
+  status: 'pendiente' | 'activo' | 'suspendido';
+  paused: boolean;
+  campus_name: string;
+  institution: string;
+  promos: Promo[];
+  loyalty_every: number;
+  loyalty_max: number;
+  totals: Totals;
+  fee: number;
+  discounts: number;
+}
+
+/**
+ * Locales vistos por la plataforma. Cada local maneja su operación (menú, horarios, cupos, aceptar pedidos); la
+ * plataforma maneja lo comercial: las promociones y la tarjeta de sellos, que paga con su comisión.
+ */
+export function OwnerShops() {
+  const { toast } = useApp();
+  const { data, error, reload } = useLoad(() => api<{ commission_bps: number; shops: OwnerShop[] }>('/owner/shops'), []);
+  const [editing, setEditing] = useState<OwnerShop | null>(null);
+  if (error) return <main className="panel-body narrow"><p className="error">{error}</p></main>;
+  if (!data) return <main className="panel-body narrow"><Loading /></main>;
+  const save = async (body: object, ok: string) => {
+    try {
+      const r = await api<Pick<OwnerShop, 'promos' | 'loyalty_every' | 'loyalty_max'>>(`/owner/shops/${editing!.id}`, 'PATCH', body);
+      setEditing({ ...editing!, ...r });
+      toast(ok, 'ok');
+      reload();
+    } catch (e) {
+      toast(errorText(e), 'error');
+    }
+  };
+  const fee = data.shops.reduce((n, s) => n + s.fee, 0);
+  const discounts = data.shops.reduce((n, s) => n + s.discounts, 0);
+  const commission = data.commission_bps / 100;
+  return (
+    <main className="panel-body narrow">
+      <div className="panel-title">
+        <h1>Locales</h1>
+      </div>
+      <p className="muted">
+        Cada local decide su operación: menú, horarios, cupos y qué pedidos acepta. {BRAND} decide lo comercial: la
+        comisión, las promociones y la tarjeta de sellos. Los descuentos los paga {BRAND} con su comisión; el local
+        recibe siempre el precio completo.
+      </p>
+      <div className="kpis kpis-inline">
+        <Kpi label="Comisiones (30 días)" value={money(fee)} />
+        <Kpi label="Descuentos (30 días)" value={money(discounts)} />
+        <Kpi label="Resultado" value={money(fee - discounts)} tone="accent" hint="Comisiones menos descuentos" />
+      </div>
+      <ul className="list">
+        {data.shops.map((s) => {
+          const t = s.totals;
+          const over = s.promos.some((p) => p.percent > commission);
+          return (
+            <li key={s.id} className="card owner-shop">
+              <div className="owner-shop-head">
+                <span className="tile" aria-hidden>
+                  {s.emoji}
+                </span>
+                <div className="grow">
+                  <strong>{s.name}</strong>
+                  <span className="muted">
+                    {s.institution} · {s.campus_name}
+                    {s.status !== 'activo' && ` · ${s.status === 'pendiente' ? 'en revisión' : 'suspendido'}`}
+                    {s.paused && ' · en pausa'}
+                  </span>
+                </div>
+                <button className="btn btn-soft btn-sm" onClick={() => setEditing(s)}>
+                  <Percent size={16} aria-hidden /> Descuentos
+                </button>
+              </div>
+              <dl className="owner-shop-stats">
+                <div>
+                  <dt>Pedidos 30 días</dt>
+                  <dd>{t.orders}</dd>
+                </div>
+                <div>
+                  <dt>A tiempo</dt>
+                  <dd>{t.on_time_pct === null ? '—' : `${t.on_time_pct}%`}</dd>
+                </div>
+                <div>
+                  <dt>Cancelados</dt>
+                  <dd>{t.cancelled}</dd>
+                </div>
+                <div>
+                  <dt>No retirados</dt>
+                  <dd>{t.no_show}</dd>
+                </div>
+                <div>
+                  <dt>Calificación</dt>
+                  <dd>{t.rating === null ? '—' : t.rating.toFixed(1)}</dd>
+                </div>
+              </dl>
+              <p className="muted small">
+                {s.promos.length ? s.promos.map(promoText).join(' · ') : 'Sin promociones'}
+                {' · '}
+                {s.loyalty_every ? `Sellos: 1 premio cada ${s.loyalty_every} (hasta ${money(s.loyalty_max)})` : 'Sin tarjeta de sellos'}
+                {s.discounts > 0 && ` · ${money(s.discounts)} en descuentos este mes`}
+              </p>
+              {over && (
+                <p className="notice notice-warn">
+                  <TriangleAlert size={18} aria-hidden />
+                  <span>Una promoción supera la comisión ({percent(data.commission_bps)}): en esos pedidos {BRAND} pone dinero.</span>
+                </p>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {editing && (
+        <Sheet title={`Descuentos en ${editing.name}`} onClose={() => setEditing(null)}>
+          <PromosEditor key={`p${editing.id}`} shop={editing} onSave={(promos) => save({ promos }, 'Promociones guardadas')} />
+          <LoyaltyEditor
+            key={`l${editing.id}`}
+            shop={editing}
+            onSave={(every, max) => save({ loyalty_every: every, loyalty_max: max }, every ? 'Tarjeta de sellos activada' : 'Tarjeta de sellos desactivada')}
+          />
+        </Sheet>
+      )}
+    </main>
+  );
+}
+
 interface PaymentsOverview {
   mode: 'simulado' | 'mercadopago' | null;
   commission_bps: number;
-  totals: { gross: number; fee: number; orders: number };
+  totals: { gross: number; fee: number; orders: number; discounts: number; net: number };
   shops: {
     id: number;
     name: string;
@@ -280,8 +413,9 @@ export function OwnerPayments() {
       )}
       <div className="kpis">
         <Kpi label="Por transferir a locales" value={money(totalOwed)} tone="accent" />
-        <Kpi label="Comisiones ganadas" value={money(data.totals.fee)} hint={`${data.totals.orders} pedidos pagados en la app`} />
-        <Kpi label="Cobrado en la app" value={money(data.totals.gross)} />
+        <Kpi label="Comisiones" value={money(data.totals.fee)} hint={`${data.totals.orders} pedidos pagados en la app`} />
+        <Kpi label="Descuentos pagados" value={money(data.totals.discounts)} hint="Promociones y premios" />
+        <Kpi label={`Lo que queda a ${BRAND}`} value={money(data.totals.net)} hint="Comisiones menos descuentos" />
       </div>
 
       <form className="card form" onSubmit={saveRate}>
@@ -324,6 +458,7 @@ export function OwnerPayments() {
               </span>
               <span className="muted">
                 {s.pending.orders} pedidos cerrados · cobrado {money(s.pending.gross)} · comisión {money(s.pending.fee)}
+                {s.pending.discounts > 0 && ` · descuentos ${money(s.pending.discounts)}`}
                 {s.in_progress.orders > 0 && ` · ${s.in_progress.orders} aún en curso`}
               </span>
             </div>

@@ -19,6 +19,8 @@ export interface User {
   baes_operator?: BaesOperator | null;
   /** Solo estudiantes: sus recreos, para proponerle la hora de retiro. */
   breaks?: Break[];
+  /** Solo estudiantes: por qué no puede pagar al retirar ahora (null si puede). */
+  pay_later_problem?: string | null;
 }
 export type BaesOperator = 'edenred' | 'pluxee';
 /** Un recreo: días (dígitos de 0 = domingo a 6 = sábado) y rango en minutos desde medianoche. */
@@ -116,10 +118,6 @@ export interface Impact {
   new_customers: number;
   no_show_paid: number;
   no_show_paid_amount: number;
-  promo_orders: number;
-  promo_sales: number;
-  promo_given: number;
-  rewards: number;
   baes_orders: number;
   baes_sales: number;
 }
@@ -164,6 +162,10 @@ export interface Order {
   subtotal: number;
   promo_discount: number;
   reward_discount: number;
+  /** Descuento que paga la plataforma (el local recibe el precio completo). */
+  funded_discount: number;
+  /** Pedidos que se pagan al retirar: historial del cliente en la plataforma. */
+  customer_history: { delivered: number; no_shows: number } | null;
   /** Solo al crear un pedido que se paga en la app: dónde completar el pago. */
   pay_url?: string;
   total: number;
@@ -223,6 +225,7 @@ export interface Settlement {
   orders: number;
   gross: number;
   fee: number;
+  discounts: number;
   amount: number;
   reference: string;
   created_at: string;
@@ -231,6 +234,7 @@ export interface PayoutSummary {
   orders: number;
   gross: number;
   fee: number;
+  discounts: number;
   amount: number;
 }
 export interface ShopPayouts {

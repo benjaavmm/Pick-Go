@@ -377,15 +377,25 @@ function OrderCard({
         ))}
       </ul>
       {o.note && <p className="note">{o.note}</p>}
-      {o.reward_discount > 0 && <p className="paid">Incluye premio de la tarjeta de sellos</p>}
+      {o.customer_history && !o.paid && (
+        <p className={`history ${o.customer_history.no_shows > 0 ? 'history-warn' : ''}`}>
+          {o.customer_history.delivered === 0
+            ? `Primer pedido en ${BRAND}`
+            : `Ha retirado ${o.customer_history.delivered} ${o.customer_history.delivered === 1 ? 'pedido' : 'pedidos'}`}
+          {o.customer_history.no_shows > 0 && ` · ${o.customer_history.no_shows} sin retirar`}
+        </p>
+      )}
       {o.payment_method === 'junaeb' && !o.paid ? (
-        <p className="collect collect-baes">
-          <Wallet size={16} aria-hidden /> Cobrar {money(o.total)} con beca Junaeb ({BAES[o.baes_operator]?.name ?? 'operador'})
+        <p className="collect">
+          Cobrar {money(o.total)} con Junaeb ({BAES[o.baes_operator]?.name ?? 'operador'})
         </p>
       ) : (
         <p className={o.paid ? 'paid' : 'collect'}>
           {o.payment_method === 'app' ? 'Pagado en la app' : o.paid ? 'Pagado' : `Cobrar ${money(o.total)} al entregar`}
         </p>
+      )}
+      {o.payment_method !== 'app' && o.funded_discount > 0 && (
+        <p className="muted small">{BRAND} te abona {money(o.funded_discount)} en la liquidación.</p>
       )}
       <div className="ticket-actions">
         {next && (
@@ -696,15 +706,6 @@ function ImpactPanel({ i }: { i: Impact }) {
             {i.new_customers} nuevos · {i.returning} volvieron más de una vez
           </span>
         </div>
-        {i.promo_orders > 0 && (
-          <div className="impact-item">
-            <span>Ventas con promoción</span>
-            <b>{moneyShort(i.promo_sales)}</b>
-            <span>
-              {i.promo_orders} pedidos en horas tranquilas · descuentos por {money(i.promo_given)}
-            </span>
-          </div>
-        )}
         {i.no_show_paid > 0 && (
           <div className="impact-item">
             <span>No retirados, pero cobrados</span>
@@ -717,13 +718,6 @@ function ImpactPanel({ i }: { i: Impact }) {
             <span>Ventas con beca Junaeb</span>
             <b>{moneyShort(i.baes_sales)}</b>
             <span>{i.baes_orders} pedidos de estudiantes con beca, cobrados en segundos al retirar</span>
-          </div>
-        )}
-        {i.rewards > 0 && (
-          <div className="impact-item">
-            <span>Premios de la tarjeta de sellos</span>
-            <b>{i.rewards}</b>
-            <span>Clientes que volvieron por su sello</span>
           </div>
         )}
       </div>
@@ -764,16 +758,17 @@ export function ShopStatsPage() {
       {p?.enabled && (
         <section className="card stack">
           <div className="panel-title">
-            <h2>Pagos en la app</h2>
+            <h2>Lo que te transfiere {BRAND}</h2>
             <span className="muted small">Comisión {BRAND}: {percent(p.commission_bps)}</span>
           </div>
           <div className="kpis kpis-inline">
             <Kpi label="Por recibir" value={money(p.pending.amount)} hint={`${p.pending.orders} pedidos cerrados`} tone="accent" />
-            <Kpi label="Cobrado a estudiantes" value={money(p.pending.gross)} hint={`Comisión ${money(p.pending.fee)}`} />
+            <Kpi label="Cobrado en la app" value={money(p.pending.gross)} hint={`Comisión ${money(p.pending.fee)}`} />
             <Kpi label="En curso" value={money(p.in_progress.gross)} hint={`${p.in_progress.orders} pedidos sin entregar`} />
           </div>
           <p className="muted small">
-            Se liquida lo entregado y lo no retirado. Lo que se cancela se devuelve al estudiante y no paga comisión.
+            Se liquida lo entregado y lo no retirado. Lo que se cancela se devuelve al estudiante y no paga comisión. Las
+            promociones y premios las paga {BRAND}: tú recibes siempre el precio completo.
           </p>
           {p.settlements.length > 0 && (
             <ul className="lines">
@@ -1197,7 +1192,10 @@ export function ShopMenu() {
 const WEEK: [string, string][] = [['1', 'Lun'], ['2', 'Mar'], ['3', 'Mié'], ['4', 'Jue'], ['5', 'Vie'], ['6', 'Sáb'], ['0', 'Dom']];
 
 /** Descuentos para repartir la demanda hacia horas tranquilas. */
-function PromosEditor({ shop, onSave }: { shop: Shop; onSave: (p: Promo[]) => void }) {
+type Discounts = Pick<Shop, 'promos' | 'loyalty_every' | 'loyalty_max'>;
+
+/** Promociones por hora de retiro. Las define y las paga la plataforma (ver Plataforma → Locales). */
+export function PromosEditor({ shop, onSave }: { shop: Discounts; onSave: (p: Promo[]) => void }) {
   const [rows, setRows] = useState(shop.promos.map((p) => ({ from: hhmm(p.from), to: hhmm(p.to), percent: String(p.percent) })));
   const set = (i: number, k: 'from' | 'to' | 'percent', v: string) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   return (
@@ -1210,8 +1208,8 @@ function PromosEditor({ shop, onSave }: { shop: Shop; onSave: (p: Promo[]) => vo
     >
       <h2>Promociones en horas tranquilas</h2>
       <p className="muted">
-        Un descuento para quienes retiren en horas de poca venta. Mueve pedidos fuera del horario peak y te vende más en
-        horas muertas. Los estudiantes lo ven en tu menú y al elegir la hora.
+        Un descuento para quienes retiren en horas de poca venta: mueve pedidos fuera del peak. Lo paga {BRAND}; el local
+        recibe el precio completo.
       </p>
       <div className="promo-editor">
         {rows.map((r, i) => (
@@ -1244,8 +1242,8 @@ function PromosEditor({ shop, onSave }: { shop: Shop; onSave: (p: Promo[]) => vo
   );
 }
 
-/** Tarjeta de sellos: cada N pedidos entregados, un producto gratis. */
-function LoyaltyEditor({ shop, onSave }: { shop: Shop; onSave: (every: number, max: number) => void }) {
+/** Tarjeta de sellos: cada N pedidos entregados, un producto gratis. Lo paga la plataforma. */
+export function LoyaltyEditor({ shop, onSave }: { shop: Discounts; onSave: (every: number, max: number) => void }) {
   const [on, setOn] = useState(shop.loyalty_every > 0);
   const [every, setEvery] = useState(String(shop.loyalty_every || 6));
   const [max, setMax] = useState(String(shop.loyalty_max || 2500));
@@ -1446,11 +1444,6 @@ export function ShopSettings() {
         </label>
       </section>
 
-      <PromosEditor shop={shop} onSave={(promos) => patch({ promos }, 'Promociones guardadas')} />
-      <LoyaltyEditor
-        shop={shop}
-        onSave={(every, max) => patch({ loyalty_every: every, loyalty_max: max }, every ? 'Tarjeta de sellos activada' : 'Tarjeta de sellos desactivada')}
-      />
 
       <form className="card form" onSubmit={save}>
         <h2>Horarios de retiro</h2>

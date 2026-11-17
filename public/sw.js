@@ -1,6 +1,6 @@
 // Service worker de GoBite: permite instalar la app, abrirla con mala señal
 // y recibir avisos aunque esté cerrada. Nunca guarda respuestas de la API.
-const CACHE = 'gobite-v4';
+const CACHE = 'gobite-v5';
 const SHELL = ['/', '/manifest.webmanifest', '/icon-192.png'];
 
 self.addEventListener('install', (event) => {
