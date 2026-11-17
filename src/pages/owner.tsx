@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { api, errorText, money, percent, shortDay, type Order, type PayoutSummary, type Settlement } from '../lib';
 import { useApp, useLoad } from '../state';
+import { BRAND } from '../brand';
 import { Empty, Kpi, Loading, Logo, Sheet } from '../ui';
 import { AccountSettings } from './account';
 
@@ -268,7 +269,7 @@ export function OwnerPayments() {
       {!data.mode && (
         <p className="notice notice-warn">
           <TriangleAlert size={18} aria-hidden />
-          <span>El cobro en la app está desactivado: todos los pedidos se pagan en el local. Se activa con PICKGO_PAYMENTS.</span>
+          <span>El cobro en la app está desactivado: todos los pedidos se pagan en el local. Se activa con ALTIRO_PAYMENTS.</span>
         </p>
       )}
       {data.mode === 'simulado' && (
@@ -286,7 +287,7 @@ export function OwnerPayments() {
       <form className="card form" onSubmit={saveRate}>
         <h2>Comisión de la plataforma</h2>
         <p className="muted">
-          Porcentaje de cada pedido pagado en la app que se queda Pick&amp;Go. Recuerda que el proveedor de pagos también
+          Porcentaje de cada pedido pagado en la app que se queda {BRAND}. Recuerda que el proveedor de pagos también
           cobra su propia comisión a tu cuenta: la tuya debe cubrirla.
         </p>
         <div className="inline-form">

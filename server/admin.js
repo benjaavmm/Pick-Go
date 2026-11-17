@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashPassword } from './auth.js';
-import { openDb } from './db.js';
+import { migrateEnv } from './brand.js';
+import { dbFileFrom, openDb } from './db.js';
 
 const [institution, emailArg] = process.argv.slice(2);
 if (!institution || !emailArg || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailArg)) {
@@ -13,8 +14,9 @@ if (!institution || !emailArg || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailArg)) {
   process.exit(1);
 }
 const email = emailArg.toLowerCase();
+migrateEnv();
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dbFile = process.env.PICKGO_DB ?? path.join(root, 'data', 'pickgo.db');
+const dbFile = dbFileFrom(process.env, root);
 fs.mkdirSync(path.dirname(dbFile), { recursive: true });
 const db = openDb(dbFile);
 

@@ -3,6 +3,9 @@ import {
   Heart,
   Gift,
   Check,
+  Coffee,
+  Trash2,
+  Wallet,
   ChevronRight,
   Clock,
   CreditCard,
@@ -23,6 +26,17 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom';
 import {
   api,
+  BAES,
+  baesName,
+  breakFor,
+  daysText,
+  nextBreak,
+  WEEK,
+  toMinutes,
+  type Break,
+  type PaymentMethod,
+  chileNow,
+  shortDay,
   clockTime,
   errorText,
   firstName,
@@ -48,6 +62,7 @@ import {
   type Status,
   type User,
 } from '../lib';
+import { BRAND } from '../brand';
 import { useApp, useLoad, useOrderEvents, useTick } from '../state';
 import { Empty, ErrorBox, Loading, Logo, ProductTile, Rating, Sheet, StarsInput, StatusPill, TopBar } from '../ui';
 import { AccountSettings } from './account';
@@ -205,6 +220,41 @@ export function TestPayment() {
   );
 }
 
+/** El próximo recreo del estudiante: la razón de ser de la app es que alcance a comer en él. */
+function BreakCard({ breaks }: { breaks: Break[] | undefined }) {
+  const next = nextBreak(breaks);
+  if (!breaks?.length)
+    return (
+      <Link to="/perfil#recreos" className="card break-card break-empty">
+        <Coffee size={22} aria-hidden />
+        <span className="grow">
+          <strong>¿Cuándo son tus recreos?</strong>
+          <span className="muted">Guárdalos y te proponemos la hora justa para retirar, sin perder ni un minuto.</span>
+        </span>
+        <ChevronRight size={18} aria-hidden />
+      </Link>
+    );
+  if (!next) return null;
+  const range = `${hhmm(next.from)} a ${hhmm(next.to)}`;
+  const minutes = next.from - chileNow().minutes;
+  const when = slotDay(`${next.date}T00:00`) === 'Mañana' ? 'mañana' : shortDay(next.date);
+  return (
+    <section className="break-card card" aria-label="Tu próximo recreo">
+      <Coffee size={22} aria-hidden />
+      <span className="grow">
+        <span className="break-kicker">{next.ongoing ? 'Estás en recreo' : next.today ? 'Tu próximo recreo' : `Próximo recreo: ${when}`}</span>
+        <strong>
+          {range}
+          {next.today && !next.ongoing && minutes > 0 && <small> · en {minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`}</small>}
+        </strong>
+        <span className="muted">
+          {next.ongoing ? 'Pide ahora: te mostramos la hora más cercana para retirar.' : 'Pide ahora y te proponemos retirar justo al empezar tu recreo.'}
+        </span>
+      </span>
+    </section>
+  );
+}
+
 // ---------- Inicio: locales de la sede ----------
 export function Home() {
   const { user } = useApp();
@@ -216,6 +266,8 @@ export function Home() {
   useTick();
   const active = (orders.data ?? []).filter((o) => isOpenOrder(o.status));
   const last = (orders.data ?? []).find((o) => o.status === 'entregado');
+  const [onlyBaes, setOnlyBaes] = useState(false);
+  const anyBaes = (shops.data ?? []).some((s) => s.accepts_baes);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchHit[] | null>(null);
   const searching = query.trim().length >= 2;
@@ -238,10 +290,10 @@ export function Home() {
   // Primero los locales donde se puede retirar antes.
   const sorted = useMemo(
     () =>
-      [...(shops.data ?? [])].sort((a, b) =>
-        (a.next_slot?.slot ?? '9999').localeCompare(b.next_slot?.slot ?? '9999') || a.name.localeCompare(b.name),
-      ),
-    [shops.data],
+      [...(shops.data ?? [])]
+        .filter((s) => !onlyBaes || s.accepts_baes)
+        .sort((a, b) => (a.next_slot?.slot ?? '9999').localeCompare(b.next_slot?.slot ?? '9999') || a.name.localeCompare(b.name)),
+    [shops.data, onlyBaes],
   );
 
   return (
@@ -268,6 +320,8 @@ export function Home() {
           ))}
         </section>
       )}
+
+      {active.length === 0 && <BreakCard breaks={user!.breaks} />}
 
       <label className="search">
         <Search size={20} aria-hidden />
@@ -336,7 +390,16 @@ export function Home() {
         </Link>
       )}
 
-      {!searching && <h2 className="section">Locales en tu sede</h2>}
+      {!searching && (
+        <div className="section-row">
+          <h2 className="section">Locales en tu sede</h2>
+          {anyBaes && (
+            <button className={`filter-chip ${onlyBaes ? 'on' : ''}`} aria-pressed={onlyBaes} onClick={() => setOnlyBaes(!onlyBaes)}>
+              <Wallet size={15} aria-hidden /> Aceptan Junaeb
+            </button>
+          )}
+        </div>
+      )}
       {shops.error && <ErrorBox text={shops.error} retry={shops.reload} />}
       {!shops.data && !shops.error && <Loading />}
       {shops.data?.length === 0 && (
@@ -365,6 +428,7 @@ export function Home() {
                         <MapPin size={13} aria-hidden /> {s.location}
                       </span>
                     )}
+                    {s.accepts_baes && <span className="baes-tag">Junaeb</span>}
                   </span>
                 </span>
                 {s.paused || !s.next_slot ? (
@@ -565,6 +629,14 @@ export function ShopPage() {
         </p>
       )}
 
+      {shop.accepts_baes && (
+        <p className="notice notice-baes">
+          <Wallet size={18} aria-hidden />
+          <span>
+            Acepta tu <strong>beca Junaeb</strong>: pagas al retirar con {baesName(shop.baes_operator)}.
+          </span>
+        </p>
+      )}
       {shop.promos.length > 0 && !shop.paused && (
         <section className="promo-strip" aria-label="Promociones">
           <Percent size={18} aria-hidden />
@@ -649,10 +721,16 @@ export function ShopPage() {
 }
 
 // ---------- Carrito y hora de retiro ----------
-function SlotPicker({ slots, value, onChange }: { slots: Slot[]; value: string; onChange: (s: string) => void }) {
+function SlotPicker({ slots, value, onChange, breaks }: { slots: Slot[]; value: string; onChange: (s: string) => void; breaks?: Break[] }) {
   const hasToday = slots.some((s) => s.day === 'hoy');
-  const [day, setDay] = useState<'hoy' | 'manana'>(hasToday ? 'hoy' : 'manana');
+  const chosenDay = slots.find((s) => s.slot === value)?.day;
+  const [day, setDay] = useState<'hoy' | 'manana'>(chosenDay ?? (hasToday ? 'hoy' : 'manana'));
+  // Si la hora propuesta cae mañana, se muestra ese día.
+  useEffect(() => {
+    if (chosenDay) setDay(chosenDay);
+  }, [chosenDay]);
   const shown = slots.filter((s) => s.day === day);
+  const anyBreak = shown.some((s) => breakFor(breaks, s.slot));
   return (
     <div>
       <div className="segmented">
@@ -672,7 +750,8 @@ function SlotPicker({ slots, value, onChange }: { slots: Slot[]; value: string; 
               key={s.slot}
               role="radio"
               aria-checked={value === s.slot}
-              className={value === s.slot ? 'on' : ''}
+              aria-label={breakFor(breaks, s.slot) ? `${s.time}, en tu recreo` : undefined}
+              className={`${value === s.slot ? 'on' : ''} ${breakFor(breaks, s.slot) ? 'in-break' : ''}`}
               disabled={s.remaining === 0}
               onClick={() => onChange(s.slot)}
             >
@@ -687,6 +766,11 @@ function SlotPicker({ slots, value, onChange }: { slots: Slot[]; value: string; 
             </button>
           ))}
         </div>
+      )}
+      {anyBreak && (
+        <p className="slots-legend">
+          <span className="legend-dot" aria-hidden /> Horas dentro de tus recreos
+        </p>
       )}
     </div>
   );
@@ -714,10 +798,16 @@ export function Checkout() {
   const { payments, demo } = useApp();
   const [reviewing, setReviewing] = useState(false);
   const shopInfo = useLoad(() => (shopId ? api<{ shop: Shop }>(`/shops/${shopId}`) : Promise.resolve(null)), [shopId]);
-  const payAtShop = !payments || !!shopInfo.data?.shop.pay_at_shop;
+  const shopData = shopInfo.data?.shop;
+  const payAtShop = !payments || !!shopData?.pay_at_shop;
+  const acceptsBaes = !!shopData?.accepts_baes;
   const [slot, setSlot] = useState('');
-  const [method, setMethod] = useState<'app' | 'local'>('app');
-  const payMethod = payments ? (payAtShop ? method : 'app') : 'local';
+  const [proposed, setProposed] = useState('');
+  // Medios disponibles en este local, en orden: en la app, beca Junaeb y en el local.
+  const methods: PaymentMethod[] = [...(payments ? (['app'] as const) : []), ...(acceptsBaes ? (['junaeb'] as const) : []), ...(payAtShop ? (['local'] as const) : [])];
+  const [method, setMethod] = useState<PaymentMethod | null>(null);
+  // Quien tiene beca parte con ella propuesta; si no, el primer medio disponible.
+  const payMethod: PaymentMethod = method && methods.includes(method) ? method : user!.baes && acceptsBaes ? 'junaeb' : methods[0] ?? 'local';
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -750,12 +840,18 @@ export function Checkout() {
   }, [shopId, slot, useReward, itemsKey]);
   const total = quote?.total ?? cartTotal;
 
-  // Por defecto se propone la primera hora con cupo: el camino rápido es confirmar y listo.
+  // Por defecto se propone la primera hora con cupo dentro de un recreo de hoy; si no hay, la primera con cupo.
+  // El camino rápido es confirmar y listo.
   useEffect(() => {
     if (!slots.data) return;
     const valid = slots.data.find((s) => s.slot === slot && s.remaining > 0);
-    if (!valid) setSlot(slots.data.find((s) => s.remaining > 0)?.slot ?? '');
-  }, [slots.data, slot]);
+    if (valid) return;
+    const open = slots.data.filter((s) => s.remaining > 0);
+    const inBreak = open.find((s) => s.day === 'hoy' && breakFor(user!.breaks, s.slot));
+    const pick = inBreak ?? open[0];
+    setSlot(pick?.slot ?? '');
+    setProposed(inBreak ? inBreak.slot : '');
+  }, [slots.data, slot, user]);
 
   if (!shopId || cart.lines.length === 0)
     return (
@@ -830,9 +926,18 @@ export function Checkout() {
         ) : slots.data.length === 0 ? (
           <p className="error">Este local no está recibiendo pedidos en este momento.</p>
         ) : (
-          <SlotPicker slots={slots.data} value={slot} onChange={setSlot} />
+          <SlotPicker slots={slots.data} value={slot} onChange={setSlot} breaks={user!.breaks} />
         )}
       </div>
+      {proposed && slot === proposed && breakFor(user!.breaks, proposed) && (
+        <p className="notice notice-break">
+          <Coffee size={18} aria-hidden />
+          <span>
+            Te propusimos las <strong>{proposed.slice(11)}</strong>, dentro de tu recreo de {hhmm(breakFor(user!.breaks, proposed)!.from)} a{' '}
+            {hhmm(breakFor(user!.breaks, proposed)!.to)}: llegas, retiras y te queda tiempo para comer.
+          </span>
+        </p>
+      )}
 
       {quote?.loyalty && quote.loyalty.rewards > 0 && (
         <button className={`reward-toggle ${useReward ? 'on' : ''}`} role="switch" aria-checked={useReward} onClick={() => setUseReward(!useReward)}>
@@ -875,21 +980,39 @@ export function Checkout() {
       )}
 
       <StepTitle n={3}>Pago</StepTitle>
-      {payments ? (
+      {methods.length > 1 ? (
         <div className="options" role="radiogroup" aria-label="Cómo pagas">
-          <button role="radio" aria-checked={payMethod === 'app'} className={payMethod === 'app' ? 'on' : ''} onClick={() => setMethod('app')}>
-            <span className="option-icon" aria-hidden>
-              <CreditCard size={22} />
-            </span>
-            <span className="grow">
-              Pagar ahora en la app
-              <small>{payments === 'simulado' ? 'Pago de prueba: no se cobra dinero real.' : 'Con Mercado Pago: tarjeta, débito o saldo.'}</small>
-            </span>
-            <span className="radio" aria-hidden>
-              {payMethod === 'app' && <Check size={14} strokeWidth={3} />}
-            </span>
-          </button>
-          {payAtShop && (
+          {methods.includes('app') && (
+            <button role="radio" aria-checked={payMethod === 'app'} className={payMethod === 'app' ? 'on' : ''} onClick={() => setMethod('app')}>
+              <span className="option-icon" aria-hidden>
+                <CreditCard size={22} />
+              </span>
+              <span className="grow">
+                Pagar ahora en la app
+                <small>{payments === 'simulado' ? 'Pago de prueba: no se cobra dinero real.' : 'Con Mercado Pago: tarjeta, débito o saldo.'} Llegas y retiras.</small>
+              </span>
+              <span className="radio" aria-hidden>
+                {payMethod === 'app' && <Check size={14} strokeWidth={3} />}
+              </span>
+            </button>
+          )}
+          {methods.includes('junaeb') && (
+            <button role="radio" aria-checked={payMethod === 'junaeb'} className={`baes-option ${payMethod === 'junaeb' ? 'on' : ''}`} onClick={() => setMethod('junaeb')}>
+              <span className="option-icon" aria-hidden>
+                <Wallet size={22} />
+              </span>
+              <span className="grow">
+                Beca Junaeb al retirar
+                <small>
+                  Pagas {money(total)} en el mesón con {baesName(shopData?.baes_operator)}. Tu pedido ya está listo: solo pagas y te vas.
+                </small>
+              </span>
+              <span className="radio" aria-hidden>
+                {payMethod === 'junaeb' && <Check size={14} strokeWidth={3} />}
+              </span>
+            </button>
+          )}
+          {methods.includes('local') && (
             <button role="radio" aria-checked={payMethod === 'local'} className={payMethod === 'local' ? 'on' : ''} onClick={() => setMethod('local')}>
               <span className="option-icon" aria-hidden>
                 <Store size={22} />
@@ -904,6 +1027,16 @@ export function Checkout() {
             </button>
           )}
         </div>
+      ) : payMethod === 'junaeb' ? (
+        <section className="card pay-note">
+          <span className="option-icon" aria-hidden>
+            <Wallet size={22} />
+          </span>
+          <div className="grow">
+            <strong>Pagas con tu beca Junaeb al retirar</strong>
+            <p className="muted">Pagas {money(total)} en el mesón con {baesName(shopData?.baes_operator)}.</p>
+          </div>
+        </section>
       ) : (
         <section className="card pay-note">
           <span className="option-icon" aria-hidden>
@@ -971,11 +1104,11 @@ export function Checkout() {
           <section className="pay-provider">
             <ShieldCheck size={22} aria-hidden />
             <div>
-              <strong>{payments === 'simulado' ? 'Pago de prueba dentro de Pick&Go' : 'Pagas con Mercado Pago'}</strong>
+              <strong>{payments === 'simulado' ? `Pago de prueba dentro de ${BRAND}` : 'Pagas con Mercado Pago'}</strong>
               <p className="muted">
                 {payments === 'simulado'
                   ? 'Esta versión usa un pago de prueba: no se cobra dinero.'
-                  : 'Te llevamos a la página segura de Mercado Pago para pagar con tarjeta de crédito, débito o tu saldo. Pick&Go no ve ni guarda los datos de tu tarjeta.'}
+                  : `Te llevamos a la página segura de Mercado Pago para pagar con tarjeta de crédito, débito o tu saldo. ${BRAND} no ve ni guarda los datos de tu tarjeta.`}
               </p>
             </div>
           </section>
@@ -1129,6 +1262,29 @@ function RateCard({ o, onRated }: { o: Order; onRated: (o: Order) => void }) {
   );
 }
 
+/** Cómo pagar con la beca en el mesón: el estudiante llega con la app del operador abierta y el monto exacto. */
+function BaesPay({ o }: { o: Order }) {
+  const op = BAES[o.baes_operator] ?? BAES.edenred;
+  const ready = o.status === 'listo';
+  return (
+    <section className={`card baes-pay ${ready ? 'ready' : ''}`} aria-label="Pago con beca Junaeb">
+      <header>
+        <Wallet size={22} aria-hidden />
+        <div className="grow">
+          <span className="baes-kicker">Beca Junaeb · {op.name}</span>
+          <strong>{ready ? `Abre ${op.app} y paga ${money(o.total)}` : `Al retirar pagas ${money(o.total)}`}</strong>
+        </div>
+      </header>
+      <ol>
+        {op.student.map((t) => (
+          <li key={t}>{t}</li>
+        ))}
+      </ol>
+      <p className="muted small">Si la beca no pasa (por ejemplo, sin saldo), pagas con otro medio en el mismo mesón.</p>
+    </section>
+  );
+}
+
 export function OrderDetail() {
   const { id } = useParams();
   const { replaceCart, toast } = useApp();
@@ -1262,6 +1418,8 @@ export function OrderDetail() {
         )}
       </section>
 
+      {o.payment_method === 'junaeb' && active && <BaesPay o={o} />}
+
       {o.status === 'cancelado' && o.cancel_reason && (
         <p className="notice notice-warn">
           <TriangleAlert size={18} aria-hidden />
@@ -1360,6 +1518,105 @@ export function OrderDetail() {
 }
 
 // ---------- Perfil ----------
+/** Los recreos del estudiante: con ellos la app le propone la hora de retiro que calza con su horario. */
+function BreaksEditor() {
+  const { user, setUser, toast } = useApp();
+  const breaks = user!.breaks ?? [];
+  // Desde el aviso de inicio se llega aquí con #recreos: se muestra el formulario, listo para usar.
+  const [adding, setAdding] = useState(() => breaks.length === 0 && window.location.hash === '#recreos');
+  useEffect(() => {
+    if (window.location.hash === '#recreos') document.getElementById('recreos')?.scrollIntoView({ block: 'start' });
+  }, []);
+  const [days, setDays] = useState('12345');
+  const [from, setFrom] = useState('10:20');
+  const [to, setTo] = useState('10:40');
+  const save = async (next: Break[], ok: string) => {
+    try {
+      setUser(await api<User>('/me', 'PATCH', { breaks: next }));
+      toast(ok, 'ok');
+      return true;
+    } catch (e) {
+      toast(errorText(e), 'error');
+      return false;
+    }
+  };
+  const add = async (e: FormEvent) => {
+    e.preventDefault();
+    if (await save([...breaks, { days, from: toMinutes(from), to: toMinutes(to) }], 'Recreo guardado')) setAdding(false);
+  };
+  return (
+    <section className="card breaks" id="recreos" aria-labelledby="breaks-title">
+      <div className="breaks-head">
+        <span className="setting-icon" aria-hidden>
+          <Coffee size={20} />
+        </span>
+        <div className="grow">
+          <strong id="breaks-title">Mis recreos</strong>
+          <p className="muted">Te proponemos retirar justo al empezar tu recreo, y te mostramos qué horas calzan con tu horario.</p>
+        </div>
+      </div>
+      {breaks.length > 0 && (
+        <ul className="break-list">
+          {breaks.map((b, i) => (
+            <li key={`${b.days}-${b.from}-${i}`}>
+              <span className="grow">
+                <strong>
+                  {hhmm(b.from)} a {hhmm(b.to)}
+                </strong>
+                <span className="muted">{daysText(b.days)}</span>
+              </span>
+              <button
+                className="icon-btn"
+                aria-label={`Quitar el recreo de ${hhmm(b.from)} a ${hhmm(b.to)}`}
+                onClick={() => void save(breaks.filter((_, j) => j !== i), 'Recreo eliminado')}
+              >
+                <Trash2 size={18} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding ? (
+        <form className="form break-form" onSubmit={add}>
+          <fieldset className="days">
+            <legend>Días</legend>
+            {WEEK.map(([d, label]) => (
+              <label key={d} className={`day ${days.includes(d) ? 'on' : ''}`}>
+                <input type="checkbox" checked={days.includes(d)} onChange={() => setDays(days.includes(d) ? days.replace(d, '') : [...days, d].sort().join(''))} />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+          <div className="form-row">
+            <label className="grow">
+              Desde
+              <input type="time" value={from} onChange={(e) => setFrom(e.target.value)} required />
+            </label>
+            <label className="grow">
+              Hasta
+              <input type="time" value={to} onChange={(e) => setTo(e.target.value)} required />
+            </label>
+          </div>
+          <div className="form-row">
+            <button type="button" className="btn btn-ghost grow" onClick={() => setAdding(false)}>
+              Cancelar
+            </button>
+            <button className="btn btn-primary grow" disabled={!days || !from || !to}>
+              Guardar recreo
+            </button>
+          </div>
+        </form>
+      ) : (
+        breaks.length < 12 && (
+          <button className="btn btn-soft btn-block" onClick={() => setAdding(true)}>
+            <Plus size={18} aria-hidden /> Agregar recreo
+          </button>
+        )
+      )}
+    </section>
+  );
+}
+
 export function Profile() {
   const { user, setUser, toast } = useApp();
   const [campusId, setCampusId] = useState(String(user!.campus_id ?? ''));
@@ -1371,6 +1628,16 @@ export function Profile() {
       toast('Nombre actualizado', 'ok');
     } catch (err) {
       toast(errorText(err), 'error');
+    }
+  };
+
+  const toggleBaes = async () => {
+    try {
+      const u = await api<User>('/me', 'PATCH', { baes: !user!.baes });
+      setUser(u);
+      toast(u.baes ? 'Te propondremos pagar con tu beca' : 'Listo, no te propondremos la beca', 'ok');
+    } catch (e) {
+      toast(errorText(e), 'error');
     }
   };
 
@@ -1410,6 +1677,26 @@ export function Profile() {
         Tu sede
         <CampusSelect value={campusId} onChange={changeCampus} />
       </label>
+
+      <section className="card setting">
+        <span className="setting-icon setting-baes" aria-hidden>
+          <Wallet size={20} />
+        </span>
+        <div className="grow">
+          <strong>Tengo beca Junaeb (BAES)</strong>
+          <p className="muted">
+            Te proponemos pagar con ella en los locales que la aceptan. En tu sede se paga con {baesName(user!.baes_operator)}, en el mesón al
+            retirar.
+          </p>
+        </div>
+        <label className="switch">
+          <input type="checkbox" role="switch" checked={!!user!.baes} aria-label="Tengo beca Junaeb" onChange={() => toggleBaes()} />
+          <span aria-hidden />
+        </label>
+      </section>
+
+      <BreaksEditor />
+
       <AccountSettings notifyText="Te avisamos cuando tu pedido esté listo, aunque tengas la app cerrada." />
     </main>
   );

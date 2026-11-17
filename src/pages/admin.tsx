@@ -1,7 +1,8 @@
-import { Building2, Check, FileDown, LayoutDashboard, MapPin, Plus, Store, UserCog, Ban } from 'lucide-react';
+import { Building2, Check, FileDown, LayoutDashboard, MapPin, Plus, Store, UserCog, Ban, Wallet } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { NavLink, Outlet, useOutletContext } from 'react-router-dom';
-import { api, errorText, money, moneyShort, shortDay, type AdminShop, type Overview } from '../lib';
+import { api, BAES, errorText, money, moneyShort, shortDay, type AdminShop, type BaesOperator, type Overview } from '../lib';
+import { STORE } from '../brand';
 import { useApp, useLoad } from '../state';
 import { BarChart, Empty, Kpi, Loading, Logo, Rating, Sheet } from '../ui';
 import { AccountSettings } from './account';
@@ -112,7 +113,7 @@ function downloadCsv(shops: AdminShop[], data: Overview) {
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = `pickgo-locales-${data.from}-a-${data.to}.csv`;
+  a.download = `${STORE}-locales-${data.from}-a-${data.to}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -314,14 +315,25 @@ export function AdminCampuses() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [city, setCity] = useState('');
+  const [operator, setOperator] = useState<'' | BaesOperator>('');
   const save = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      await api('/admin/campuses', 'POST', { name, city });
+      await api('/admin/campuses', 'POST', { name, city, baes_operator: operator || undefined });
       toast('Sede creada', 'ok');
       setOpen(false);
       setName('');
       setCity('');
+      setOperator('');
+      reload();
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+  };
+  const changeOperator = async (id: number, op: BaesOperator) => {
+    try {
+      await api(`/admin/campuses/${id}`, 'PATCH', { baes_operator: op });
+      toast(`Beca Junaeb con ${BAES[op].name} en esta sede`, 'ok');
       reload();
     } catch (err) {
       toast(errorText(err), 'error');
@@ -335,6 +347,10 @@ export function AdminCampuses() {
           <Plus size={20} aria-hidden /> Agregar sede
         </button>
       </div>
+      <p className="muted">
+        Junaeb licita la beca por región y el operador puede cambiar: si cambia en una sede, corrígelo aquí y los locales y
+        estudiantes verán las instrucciones correctas.
+      </p>
       <ul className="list">
         {data.campuses.map((c) => (
           <li key={c.id} className="card shop-admin">
@@ -343,11 +359,20 @@ export function AdminCampuses() {
             </span>
             <div className="grow">
               <strong>{c.name}</strong>
-              <span className="muted">{c.city}</span>
+              <span className="muted">
+                {c.city} · {c.students} {c.students === 1 ? 'estudiante' : 'estudiantes'}
+              </span>
+              <span className="muted small">
+                <Wallet size={13} aria-hidden /> {c.baes_shops} {c.baes_shops === 1 ? 'local recibe' : 'locales reciben'} la beca Junaeb
+              </span>
             </div>
-            <span className="muted">
-              {c.students} {c.students === 1 ? 'estudiante' : 'estudiantes'}
-            </span>
+            <label className="operator">
+              <span>Beca Junaeb</span>
+              <select value={c.baes_operator} onChange={(e) => void changeOperator(c.id, e.target.value as BaesOperator)} aria-label={`Operador de la beca Junaeb en ${c.name}`}>
+                <option value="edenred">Edenred</option>
+                <option value="pluxee">Pluxee</option>
+              </select>
+            </label>
           </li>
         ))}
       </ul>
@@ -359,8 +384,16 @@ export function AdminCampuses() {
               <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder="Ej.: Sede Maipú" required />
             </label>
             <label>
-              Ciudad
+              Ciudad o comuna
               <input value={city} onChange={(e) => setCity(e.target.value)} maxLength={60} required />
+            </label>
+            <label>
+              Operador de la beca Junaeb
+              <select value={operator} onChange={(e) => setOperator(e.target.value as '' | BaesOperator)}>
+                <option value="">Según la ciudad (Pluxee en la Región Metropolitana, Edenred en regiones)</option>
+                <option value="edenred">Edenred</option>
+                <option value="pluxee">Pluxee</option>
+              </select>
             </label>
             <button className="btn btn-primary btn-block">Crear sede</button>
           </form>

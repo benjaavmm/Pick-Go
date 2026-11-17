@@ -1,6 +1,6 @@
-// Service worker de Pick&Go: permite instalar la app, abrirla con mala señal
+// Service worker de Altiro: permite instalar la app, abrirla con mala señal
 // y recibir avisos aunque esté cerrada. Nunca guarda respuestas de la API.
-const CACHE = 'pickgo-v2';
+const CACHE = 'altiro-v3';
 const SHELL = ['/', '/manifest.webmanifest', '/icon-192.png'];
 
 self.addEventListener('install', (event) => {
@@ -71,7 +71,7 @@ self.addEventListener('push', (event) => {
     data = {};
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Pick&Go', {
+    self.registration.showNotification(data.title || 'Altiro', {
       body: data.body || '',
       icon: '/icon-192.png',
       badge: '/badge.png',

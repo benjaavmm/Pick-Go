@@ -1,16 +1,26 @@
 import { ArrowLeft, Star, UtensilsCrossed, X } from 'lucide-react';
 import { Component, useEffect, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { BRAND } from './brand';
 import { STATUS_LABEL, type Status } from './lib';
+
+/** Símbolo de la marca: un reloj que da la vuelta rápido. El mismo dibujo de los íconos de la app. */
+export function Mark({ className = 'mark' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" aria-hidden>
+      <rect width="48" height="48" rx="14" />
+      <path d="M35.7 29.3 A12.5 12.5 0 1 1 32 15.4" />
+      <path d="M33.1 11.1 L34 17 L27.9 17.2" />
+      <path d="M24 25 V19 M24 25 L28.3 27.6" />
+    </svg>
+  );
+}
 
 export function Logo({ size = 'md' }: { size?: 'md' | 'lg' | 'xl' }) {
   return (
-    <span className={`logo logo-${size}`} aria-label="Pick and Go">
-      <span aria-hidden>Pick</span>
-      <span className="amp" aria-hidden>
-        &amp;
-      </span>
-      <span aria-hidden>Go</span>
+    <span className={`logo logo-${size}`} aria-label={BRAND}>
+      <Mark />
+      <span aria-hidden>{BRAND.toLowerCase()}</span>
     </span>
   );
 }
@@ -214,7 +224,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
 /** Pantalla de carga: una mano entra por la izquierda, toma la bolsa y se la lleva por la derecha. */
 export function Splash() {
   return (
-    <div className="splash" role="status" aria-label="Cargando Pick and Go">
+    <div className="splash" role="status" aria-label={`Cargando ${BRAND}`}>
       <Logo size="lg" />
       <svg className="grab" viewBox="0 0 300 180" aria-hidden>
         <line className="grab-floor" x1="40" y1="165" x2="260" y2="165" />
@@ -222,7 +232,7 @@ export function Splash() {
         <g className="grab-bag">
           <path className="grab-line" d="M128 86 C128 46 172 46 172 86" />
           <path className="grab-lime" d="M108 84 H192 L186 152 a10 10 0 0 1 -10 9 H124 a10 10 0 0 1 -10 -9 Z" />
-          <path className="grab-line" d="M136 122 l10 10 l19 -22" />
+          <path className="grab-check" d="M136 122 l10 10 l19 -22" />
         </g>
         <g className="grab-hand">
           <rect className="grab-ink" x="-60" y="38" width="172" height="30" rx="15" />

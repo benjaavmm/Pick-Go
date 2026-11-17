@@ -13,7 +13,7 @@ export function createPush(db) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('vapid', ?)").run(JSON.stringify(keys));
   }
   // Los servicios de push piden un contacto real del operador: defínelo en producción.
-  const subject = process.env.PICKGO_VAPID_SUBJECT ?? 'mailto:soporte@example.com';
+  const subject = process.env.ALTIRO_VAPID_SUBJECT ?? 'mailto:soporte@example.com';
   webpush.setVapidDetails(subject, keys.publicKey, keys.privateKey);
 
   const deliver = (subs, payload) => {

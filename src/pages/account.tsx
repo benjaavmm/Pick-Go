@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, errorText } from '../lib';
 import { useApp, type Theme } from '../state';
+import { BRAND, STORE } from '../brand';
 import { Sheet } from '../ui';
 import { PasswordInput } from './auth';
 
@@ -22,7 +23,7 @@ function Notifications({ text }: { text: string }) {
         )}
         {push === 'ios-install' && (
           <p className="hint">
-            En iPhone, primero agrega Pick&amp;Go a tu pantalla de inicio: toca Compartir y luego «Agregar a inicio». Después
+            En iPhone, primero agrega {BRAND} a tu pantalla de inicio: toca Compartir y luego «Agregar a inicio». Después
             abre la app desde ahí y activa los avisos.
           </p>
         )}
@@ -188,7 +189,7 @@ export function AccountSettings({ notifyText }: { notifyText?: string }) {
           Cerrar sesión en otros dispositivos
           <ChevronRight size={18} aria-hidden />
         </button>
-        <a href="/api/me/export" download="mis-datos-pickgo.json">
+        <a href="/api/me/export" download={`mis-datos-${STORE}.json`}>
           <FileDown size={20} aria-hidden />
           Descargar mis datos
           <ChevronRight size={18} aria-hidden />
