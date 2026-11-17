@@ -1,54 +1,54 @@
-/* GoBite — sistema visual
-   Azul ultramar sobre papel claro, con durazno como color cálido de apoyo. El ultramar marca "lo que puedes hacer
-   ahora" (la hora más cercana, el botón principal, el pedido listo); el durazno, los paneles destacados.
-   Interfaz clara: los bloques sólidos oscuros quedan solo para el texto. */
+/* GoBite — sistema visual: mango y açaí.
+   Amarillo mango para "lo que puedes hacer ahora" (la hora más cercana, el botón principal, el pedido listo), açaí
+   (un morado berry muy oscuro) para el texto y los acentos, y papel tibio de fondo. Colores de fruta y de bowl:
+   cálidos y de comida, distintos de los rojos, naranjos y verdes de las apps de delivery. Interfaz clara. */
 :root {
   --font-display: 'Bricolage Grotesque Variable', 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-body: 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
-  --bg: #f7f6f2;
+  --bg: #fcfaf5;
   --surface: #ffffff;
-  --surface-2: #efede7;
-  --ink: #181c33;
-  --ink-2: #4f5469;
-  --ink-3: #80859a;
-  --line: #e3e0d8;
-  --accent: #2b3fc9;
-  --accent-strong: #2233a8;
-  --accent-rgb: 43, 63, 201;
-  --on-accent: #ffffff;
+  --surface-2: #f5f0e7;
+  --ink: #2a1730;
+  --ink-2: #5e4d62;
+  --ink-3: #8d7f90;
+  --line: #ece4d8;
+  --accent: #ffb224;
+  --accent-strong: #f5a10a;
+  --accent-rgb: 255, 178, 36;
+  --on-accent: #2a1730;
   --outline: transparent;
-  --link: #2233a8;
-  /* Superficie suave del acento: botones secundarios, selección, contadores. */
-  --soft: #e7eafc;
-  --on-soft: #1f2d97;
-  /* Paneles destacados (portada, encabezados): durazno pálido. */
-  --dark: #ffe8da;
-  --on-dark: #181c33;
-  --on-dark-2: #5b5260;
-  --veil: rgba(24, 28, 51, 0.06);
-  --veil-2: rgba(24, 28, 51, 0.12);
-  --pop: #2b3fc9; /* resalte sobre los paneles destacados */
-  --warn: #e0a019;
-  --warn-soft: #fdf0cf;
-  --warn-text: #6d4b00;
+  --link: #8a2a6b;
+  /* Superficie suave de açaí: botones secundarios, selección, contadores. */
+  --soft: #f6e8f2;
+  --on-soft: #7a2460;
+  /* Paneles destacados (portada, encabezados): mango pálido. */
+  --dark: #ffefc9;
+  --on-dark: #2a1730;
+  --on-dark-2: #6a5560;
+  --veil: rgba(42, 23, 48, 0.06);
+  --veil-2: rgba(42, 23, 48, 0.12);
+  --pop: #8a2a6b; /* resalte sobre los paneles destacados */
+  --warn: #e8771a;
+  --warn-soft: #ffe8d4;
+  --warn-text: #8a3b00;
   --info: #2f86c4;
   --info-soft: #e1f0fa;
   --info-text: #1d5c8a;
-  --ok-soft: #e2f3ea;
-  --ok-text: #1e6943;
+  --ok-soft: #e2f3e4;
+  --ok-text: #22693a;
   --danger: #d23b2b;
   --danger-soft: #fde4df;
   --danger-text: #9b2414;
   /* Junaeb es un medio de pago más: tono neutro, sin destacarlo. */
-  --baes: #4f5469;
-  --baes-soft: #efede7;
-  --baes-text: #3a3f55;
-  --bar: #dcd9d1;
-  --bar-hot: #2b3fc9;
-  --shadow: 0 1px 2px rgba(24, 28, 51, 0.05), 0 6px 18px rgba(24, 28, 51, 0.06);
-  --shadow-up: 0 10px 30px rgba(24, 28, 51, 0.18);
+  --baes: #5e4d62;
+  --baes-soft: #f5f0e7;
+  --baes-text: #4a3b4e;
+  --bar: #e6ded2;
+  --bar-hot: #8a2a6b;
+  --shadow: 0 1px 2px rgba(42, 23, 48, 0.05), 0 6px 18px rgba(42, 23, 48, 0.06);
+  --shadow-up: 0 10px 30px rgba(42, 23, 48, 0.16);
   --r: 20px;
   --pad: 16px;
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -58,42 +58,44 @@
 /* Tema oscuro: opcional, se elige en el perfil. */
 @media all {
   :root[data-theme='dark'] {
-    --bg: #12141f;
-    --surface: #1a1d2b;
-    --surface-2: #242838;
-    --ink: #eff0f6;
-    --ink-2: #b4b8ca;
-    --ink-3: #82879c;
-    --line: #2c3043;
-    --accent: #4a5ef0;
-    --accent-strong: #5c6ff5;
-    --accent-rgb: 74, 94, 240;
+    --bg: #18111b;
+    --surface: #221926;
+    --surface-2: #2d2231;
+    --ink: #f7f0f4;
+    --ink-2: #c7b8c4;
+    --ink-3: #94859a;
+    --line: #382b3d;
+    --accent: #ffb224;
+    --accent-strong: #ffc152;
+    --accent-rgb: 255, 178, 36;
+    --on-accent: #2a1730;
     --outline: transparent;
-    --link: #a3afff;
-    --soft: #262c4f;
-    --on-soft: #c9d0ff;
-    --dark: #2a2329;
-    --on-dark: #f6efea;
-    --on-dark-2: #cbbfb9;
+    --link: #f2a7d6;
+    --soft: #3a2340;
+    --on-soft: #f3c6e4;
+    --dark: #33262a;
+    --on-dark: #fbf1e6;
+    --on-dark-2: #d6c4bb;
     --veil: rgba(255, 255, 255, 0.07);
     --veil-2: rgba(255, 255, 255, 0.13);
-    --pop: #ffb996;
-    --warn-soft: #3a2e0c;
-    --warn-text: #f3c968;
-    --info-soft: #1e2546;
-    --info-text: #b4bfff;
+    --pop: #ffb224;
+    --warn: #ff9a45;
+    --warn-soft: #3a240f;
+    --warn-text: #ffbe85;
+    --info-soft: #17283a;
+    --info-text: #a6d2f2;
     --ok-soft: #14301f;
     --ok-text: #96dbb3;
     --danger: #ff6b52;
     --danger-soft: #3d1810;
     --danger-text: #ff9c8a;
-    --baes: #b4b8ca;
-    --baes-soft: #242838;
-    --baes-text: #d5d8e4;
-    --bar: #343950;
-    --bar-hot: #6f80ff;
-    --shadow: 0 0 0 1px #262a3b;
-    --shadow-up: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 0 1px #2c3043;
+    --baes: #c7b8c4;
+    --baes-soft: #2d2231;
+    --baes-text: #e3d8e0;
+    --bar: #3f3244;
+    --bar-hot: #ffb224;
+    --shadow: 0 0 0 1px #2e2333;
+    --shadow-up: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 0 1px #382b3d;
     color-scheme: dark;
   }
 }
@@ -174,7 +176,7 @@ svg {
   white-space: nowrap;
 }
 .logo .go {
-  color: var(--accent);
+  color: var(--pop);
 }
 .logo-lg {
   font-size: 1.9rem;
@@ -224,11 +226,11 @@ svg {
   animation: grab-hand 2s cubic-bezier(0.6, 0, 0.3, 1) infinite;
 }
 .grab-ink {
-  fill: #181c33;
+  fill: #2a1730;
 }
 .grab-lime {
-  fill: #2b3fc9;
-  stroke: #181c33;
+  fill: #ffb224;
+  stroke: #2a1730;
   stroke-width: 4;
   stroke-linejoin: round;
 }
@@ -241,14 +243,14 @@ svg {
 }
 .grab-skin {
   fill: #fff;
-  stroke: #181c33;
+  stroke: #2a1730;
   stroke-width: 4;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 .grab-line {
   fill: none;
-  stroke: #181c33;
+  stroke: #2a1730;
   stroke-width: 5;
   stroke-linecap: round;
 }
@@ -405,13 +407,13 @@ svg {
   letter-spacing: -0.035em;
   line-height: 1.02;
 }
+/* Palabra destacada de los títulos: un trazo de destacador mango bajo la palabra. */
 mark {
-  background: none;
-  color: var(--accent);
-  text-decoration: underline;
-  text-decoration-thickness: 0.09em;
-  text-underline-offset: 0.12em;
-  text-decoration-skip-ink: none;
+  color: inherit;
+  background: linear-gradient(transparent 56%, var(--accent) 56%, var(--accent) 90%, transparent 90%);
+  padding: 0 0.06em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 /* ---------- utilidades ---------- */
@@ -1544,7 +1546,7 @@ label small {
 .ticket-listo .ticket-stub {
   background: transparent;
   color: var(--on-accent);
-  border-left-color: rgba(255, 255, 255, 0.35);
+  border-left-color: rgba(42, 23, 48, 0.25);
 }
 
 .again,
@@ -1948,7 +1950,7 @@ label small {
   flex: 1;
   height: 7px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--veil-2);
 }
 .progress li.done {
   background: var(--pop);
@@ -1966,7 +1968,7 @@ label small {
   color: var(--accent);
 }
 .pass-listo .progress li {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(42, 23, 48, 0.18);
 }
 .pass-listo .progress li.done {
   background: var(--on-accent);
@@ -2847,7 +2849,7 @@ th.num {
 }
 .notice-break svg,
 .break-card > svg {
-  color: var(--accent);
+  color: var(--pop);
   flex: none;
 }
 .break-card {
@@ -2943,7 +2945,7 @@ th.num {
   align-items: center;
 }
 .baes-pay header > svg {
-  color: var(--accent);
+  color: var(--pop);
   flex: none;
 }
 .baes-pay header .grow {
