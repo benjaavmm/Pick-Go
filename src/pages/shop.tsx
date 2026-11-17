@@ -18,12 +18,17 @@ import {
   Trash2,
   TriangleAlert,
   UtensilsCrossed,
+  Wallet,
   Zap,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   api,
+  ApiError,
+  BAES,
+  baesName,
+  type BaesOperator,
   errorText,
   hhmm,
   minutesUntil,
@@ -45,6 +50,7 @@ import {
   type Status,
   type User,
 } from '../lib';
+import { BRAND } from '../brand';
 import { beep, useApp, useLoad, useOrderEvents, useTick } from '../state';
 import { BarChart, Empty, Kpi, Loading, Logo, ProductTile, Sheet } from '../ui';
 import { AccountSettings } from './account';
@@ -141,7 +147,8 @@ function Scanner({ onCode, onClose }: { onCode: (code: string) => void; onClose:
             ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
             const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const text = jsQR(img.data, img.width, img.height)?.data.trim().toUpperCase();
-            if (text && /^PG[A-Z0-9]{4,8}$/.test(text)) {
+            // GB: códigos actuales; PG: pedidos hechos antes del cambio de nombre.
+            if (text && /^(GB|PG)[A-Z0-9]{4,8}$/.test(text)) {
               stopped = true;
               navigator.vibrate?.(80);
               return found.current(text);
@@ -259,6 +266,7 @@ function DeliverSheet({ o, onClose, onDeliver }: { o: Order; onClose: () => void
       <p>
         Pídele a <strong>{o.customer_name}</strong> su código de retiro. Lo tiene en su pedido, en la app. Sin el código
         correcto no se puede entregar.
+        {o.payment_method === 'junaeb' && !o.paid && ' Después te pedimos confirmar el cobro con la beca Junaeb.'}
       </p>
       <form
         className="form"
@@ -273,7 +281,7 @@ function DeliverSheet({ o, onClose, onDeliver }: { o: Order; onClose: () => void
             className="code-input"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="PG····"
+            placeholder="GB····"
             maxLength={10}
             autoComplete="off"
             autoCapitalize="characters"
@@ -289,6 +297,46 @@ function DeliverSheet({ o, onClose, onDeliver }: { o: Order; onClose: () => void
           <ScanLine size={20} aria-hidden /> Escanear su QR
         </button>
       </form>
+    </Sheet>
+  );
+}
+
+interface Charge {
+  orderId: number;
+  code: string;
+  total: number;
+  operator: BaesOperator;
+  customer: string;
+}
+
+/**
+ * Cobro con beca Junaeb al entregar. El pedido ya está listo y el monto es fijo: el local cobra con el sistema de su
+ * operador y confirma aquí. Si la beca no pasa, el estudiante paga con otro medio y queda registrado.
+ */
+function ChargeSheet({ c, onClose, onConfirm }: { c: Charge; onClose: () => void; onConfirm: (how: 'junaeb' | 'otro') => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const op = BAES[c.operator] ?? BAES.edenred;
+  const go = async (how: 'junaeb' | 'otro') => {
+    setBusy(true);
+    await onConfirm(how);
+    setBusy(false);
+  };
+  return (
+    <Sheet title={`Cobrar a ${c.customer} con beca Junaeb`} onClose={onClose}>
+      <div className="charge">
+        <span className="charge-kicker">
+          <Wallet size={16} aria-hidden /> {op.app} ({op.name})
+        </span>
+        <b className="charge-amount">{money(c.total)}</b>
+        <p>{op.shop(money(c.total))}</p>
+      </div>
+      <button className="btn btn-primary btn-block" disabled={busy} onClick={() => go('junaeb')}>
+        Cobrado con la beca · Entregar
+      </button>
+      <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => go('otro')}>
+        La beca no pasó: pagó con otro medio · Entregar
+      </button>
+      <p className="muted small center">El código de retiro ({c.code}) ya está verificado.</p>
     </Sheet>
   );
 }
@@ -330,9 +378,15 @@ function OrderCard({
       </ul>
       {o.note && <p className="note">{o.note}</p>}
       {o.reward_discount > 0 && <p className="paid">Incluye premio de la tarjeta de sellos</p>}
-      <p className={o.paid ? 'paid' : 'collect'}>
-        {o.payment_method === 'app' ? 'Pagado en la app' : o.paid ? 'Pagado' : `Cobrar ${money(o.total)} al entregar`}
-      </p>
+      {o.payment_method === 'junaeb' && !o.paid ? (
+        <p className="collect collect-baes">
+          <Wallet size={16} aria-hidden /> Cobrar {money(o.total)} con beca Junaeb ({BAES[o.baes_operator]?.name ?? 'operador'})
+        </p>
+      ) : (
+        <p className={o.paid ? 'paid' : 'collect'}>
+          {o.payment_method === 'app' ? 'Pagado en la app' : o.paid ? 'Pagado' : `Cobrar ${money(o.total)} al entregar`}
+        </p>
+      )}
       <div className="ticket-actions">
         {next && (
           <button className="btn btn-primary" onClick={() => (next.to === 'entregado' ? onDeliver(o) : onMove(o, next.to))}>
@@ -397,7 +451,7 @@ export function ShopOrders() {
   const [rejecting, setRejecting] = useState<Order | null>(null);
   const [autoPrint, setAutoPrint] = useState(() => {
     try {
-      return localStorage.getItem('pickgo.autoprint') === '1';
+      return localStorage.getItem('gobite.autoprint') === '1';
     } catch {
       return false;
     }
@@ -406,7 +460,7 @@ export function ShopOrders() {
     const v = !autoPrint;
     setAutoPrint(v);
     try {
-      localStorage.setItem('pickgo.autoprint', v ? '1' : '0');
+      localStorage.setItem('gobite.autoprint', v ? '1' : '0');
     } catch {
       /* almacenamiento no disponible */
     }
@@ -423,15 +477,23 @@ export function ShopOrders() {
     reload();
   };
   const [delivering, setDelivering] = useState<Order | null>(null);
-  const deliver = async (value: string, orderId?: number) => {
+  const [charging, setCharging] = useState<Charge | null>(null);
+  const deliver = async (value: string, orderId?: number, charge?: 'junaeb' | 'otro') => {
     let ok = false;
     try {
-      const o = await api<Order>('/shop/pickup', 'POST', { code: value, orderId });
+      const o = await api<Order>('/shop/pickup', 'POST', { code: value, orderId, charge });
       toast(`Pedido entregado a ${o.customer_name}`, 'ok');
       setCode('');
+      setCharging(null);
       ok = true;
     } catch (err) {
-      toast(errorText(err), 'error');
+      // Pedido con beca Junaeb: el código es correcto, falta confirmar el cobro.
+      const pending = err instanceof ApiError ? (err.data.charge as Charge | undefined) : undefined;
+      if (pending) {
+        setCharging({ ...pending, code: value });
+        setCode('');
+        ok = true;
+      } else toast(errorText(err), 'error');
     }
     reload();
     return ok;
@@ -466,7 +528,7 @@ export function ShopOrders() {
               id="pickup-code"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="PG····"
+              placeholder="GB····"
               maxLength={10}
               autoComplete="off"
               autoCapitalize="characters"
@@ -532,6 +594,15 @@ export function ShopOrders() {
         </details>
       )}
       {delivering && <DeliverSheet o={delivering} onClose={() => setDelivering(null)} onDeliver={(c) => deliver(c, delivering.id)} />}
+      {charging && (
+        <ChargeSheet
+          c={charging}
+          onClose={() => setCharging(null)}
+          onConfirm={async (how) => {
+            await deliver(charging.code, charging.orderId, how);
+          }}
+        />
+      )}
       {rejecting && (
         <RejectSheet
           o={rejecting}
@@ -581,7 +652,7 @@ function change(now: number, before: number) {
   return { pct, text: `${pct > 0 ? '+' : ''}${pct} % vs. período anterior` };
 }
 
-/** Lo que Pick&Go le generó al local: el resumen para el dueño. */
+/** Lo que la app le generó al local: el resumen para el dueño. */
 function ImpactPanel({ i }: { i: Impact }) {
   const sales = change(i.sales, i.previous.sales);
   const peak = i.peak_hours.length ? i.peak_hours.map((h) => `${h}:00`).join(', ') : null;
@@ -590,13 +661,13 @@ function ImpactPanel({ i }: { i: Impact }) {
   if (i.delivered === 0 && i.no_show_paid === 0)
     return (
       <section className="impact">
-        <h2>Lo que ganaste con Pick&amp;Go</h2>
+        <h2>Lo que ganaste con {BRAND}</h2>
         <p className="impact-note">Cuando entregues tus primeros pedidos, aquí verás cuánto vendiste por la app y cuánta fila te ahorraste.</p>
       </section>
     );
   return (
     <section className="impact">
-      <h2>Lo que ganaste con Pick&amp;Go</h2>
+      <h2>Lo que ganaste con {BRAND}</h2>
       <div className="impact-grid">
         <div className="impact-item">
           <span>Vendiste por la app</span>
@@ -639,6 +710,13 @@ function ImpactPanel({ i }: { i: Impact }) {
             <span>No retirados, pero cobrados</span>
             <b>{money(i.no_show_paid_amount)}</b>
             <span>{i.no_show_paid} pedidos pagados en la app que no se perdieron</span>
+          </div>
+        )}
+        {i.baes_orders > 0 && (
+          <div className="impact-item">
+            <span>Ventas con beca Junaeb</span>
+            <b>{moneyShort(i.baes_sales)}</b>
+            <span>{i.baes_orders} pedidos de estudiantes con beca, cobrados en segundos al retirar</span>
           </div>
         )}
         {i.rewards > 0 && (
@@ -687,7 +765,7 @@ export function ShopStatsPage() {
         <section className="card stack">
           <div className="panel-title">
             <h2>Pagos en la app</h2>
-            <span className="muted small">Comisión Pick&amp;Go: {percent(p.commission_bps)}</span>
+            <span className="muted small">Comisión {BRAND}: {percent(p.commission_bps)}</span>
           </div>
           <div className="kpis kpis-inline">
             <Kpi label="Por recibir" value={money(p.pending.amount)} hint={`${p.pending.orders} pedidos cerrados`} tone="accent" />
@@ -1319,6 +1397,30 @@ export function ShopSettings() {
           </label>
         </section>
       )}
+
+      <section className="card setting">
+        <span className="setting-icon setting-baes" aria-hidden>
+          <Wallet size={20} />
+        </span>
+        <div className="grow">
+          <strong>Recibir beca Junaeb (BAES)</strong>
+          <p className="muted">
+            {shop.accepts_baes
+              ? `Los estudiantes con beca pueden pedir y pagar al retirar con ${baesName(shop.baes_operator)}. Al entregar, confirmas el cobro.`
+              : `Actívalo solo si tu local está adherido a ${BAES[shop.baes_operator].name}, el operador de la beca en tu sede. Así te encuentran los estudiantes con beca.`}
+          </p>
+        </div>
+        <label className="switch">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={shop.accepts_baes}
+            aria-label="Recibir beca Junaeb"
+            onChange={() => patch({ accepts_baes: !shop.accepts_baes }, shop.accepts_baes ? 'Ya no recibes la beca Junaeb' : 'Ahora recibes la beca Junaeb')}
+          />
+          <span aria-hidden />
+        </label>
+      </section>
 
       <section className="card setting">
         <span className="setting-icon" aria-hidden>

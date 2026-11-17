@@ -1,19 +1,21 @@
-# Publica Pick&Go en Render (https://render.com) desde este repositorio.
+# Publica GoBite en Render (https://render.com) desde este repositorio.
 #
 # Tal como está, usa el plan gratuito y arranca con datos de DEMOSTRACIÓN, que se pierden cada vez
 # que el servicio se duerme. Sirve para mostrar la app, no para operar.
 #
 # Para operar de verdad (que las cuentas y los pedidos se conserven):
 #   1. Cambia `plan: free` por `plan: starter` y quita el `#` de las líneas del bloque `disk`.
-#   2. Quita el `#` de las variables PICKGO_DB y PICKGO_DEMO.
-#   3. En el panel de Render define PICKGO_OWNER_EMAIL y PICKGO_OWNER_PASSWORD (tu cuenta de plataforma)
-#      y PICKGO_VAPID_SUBJECT (por ejemplo mailto:tu-correo@dominio.cl). No las escribas en este archivo.
-#   4. Para cobrar en la app, define PICKGO_PAYMENTS (simulado o mercadopago) y, con Mercado Pago,
-#      PICKGO_MP_ACCESS_TOKEN y PICKGO_MP_WEBHOOK_SECRET.
-#   5. Para el correo (recuperar contraseñas y avisos), define también PICKGO_SMTP_URL, PICKGO_MAIL_FROM
-#      y PICKGO_PUBLIC_URL (la dirección https://… que te da Render).
+#   2. Quita el `#` de las variables GOBITE_DB y GOBITE_DEMO.
+#   3. En el panel de Render define GOBITE_OWNER_EMAIL y GOBITE_OWNER_PASSWORD (tu cuenta de plataforma)
+#      y GOBITE_VAPID_SUBJECT (por ejemplo mailto:tu-correo@dominio.cl). No las escribas en este archivo.
+#   4. Para cobrar en la app, define GOBITE_PAYMENTS (simulado o mercadopago) y, con Mercado Pago,
+#      GOBITE_MP_ACCESS_TOKEN y GOBITE_MP_WEBHOOK_SECRET.
+#   5. Para el correo (recuperar contraseñas y avisos), define también GOBITE_SMTP_URL, GOBITE_MAIL_FROM
+#      y GOBITE_PUBLIC_URL (la dirección https://… que te da Render).
 services:
   - type: web
+    # El nombre del servicio se mantiene: cambiarlo haría que Render cree un servicio nuevo, sin los datos.
+    # Las variables PICKGO_* que ya tengas definidas en Render siguen funcionando.
     name: pick-go
     runtime: node
     plan: free
@@ -29,23 +31,23 @@ services:
         value: 22
       - key: TRUST_PROXY
         value: 1
-      # - key: PICKGO_DB
-      #   value: /var/data/pickgo.db
-      # - key: PICKGO_DEMO
+      # - key: GOBITE_DB
+      #   value: /var/data/gobite.db
+      # - key: GOBITE_DEMO
       #   value: 0
-      - key: PICKGO_OWNER_EMAIL
+      - key: GOBITE_OWNER_EMAIL
         sync: false
-      - key: PICKGO_OWNER_PASSWORD
+      - key: GOBITE_OWNER_PASSWORD
         sync: false
-      - key: PICKGO_PAYMENTS
+      - key: GOBITE_PAYMENTS
         sync: false
-      - key: PICKGO_MP_ACCESS_TOKEN
+      - key: GOBITE_MP_ACCESS_TOKEN
         sync: false
-      - key: PICKGO_MP_WEBHOOK_SECRET
+      - key: GOBITE_MP_WEBHOOK_SECRET
         sync: false
-      - key: PICKGO_SMTP_URL
+      - key: GOBITE_SMTP_URL
         sync: false
-      - key: PICKGO_MAIL_FROM
+      - key: GOBITE_MAIL_FROM
         sync: false
-      - key: PICKGO_PUBLIC_URL
+      - key: GOBITE_PUBLIC_URL
         sync: false

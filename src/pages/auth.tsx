@@ -1,7 +1,8 @@
-import { BellRing, Clock, Eye, EyeOff, GraduationCap, ShieldCheck, ShoppingBag, Store, Building2 } from 'lucide-react';
+import { BellRing, Coffee, Eye, EyeOff, GraduationCap, ShieldCheck, ShoppingBag, Store, Building2 } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, errorText, type Campus, type User } from '../lib';
+import { BRAND } from '../brand';
 import { useApp, useLoad } from '../state';
 import { Logo, TopBar } from '../ui';
 
@@ -13,33 +14,31 @@ function AuthShell({ children, hero }: { children: ReactNode; hero?: ReactNode }
         {hero ?? (
           <>
             <h1 className="display">
-              Pides.
+              Pide entre clases.
               <br />
-              Retiras.
-              <br />
-              <mark>Te vas.</mark>
+              <mark>Retira sin fila.</mark>
             </h1>
-            <p>Pide en los locales de tu sede, elige a qué hora retiras y sáltate la fila.</p>
+            <p>Pide en los locales de tu sede y retira justo en tu recreo, sin fila. También con tu beca Junaeb.</p>
             <ol className="steps">
+              <li>
+                <Coffee size={20} aria-hidden />
+                <span>
+                  <strong>Calza con tus recreos</strong>
+                  Te proponemos la hora justa para retirar.
+                </span>
+              </li>
               <li>
                 <ShoppingBag size={20} aria-hidden />
                 <span>
                   <strong>Pide desde la sala</strong>
-                  Arma tu pedido en segundos.
-                </span>
-              </li>
-              <li>
-                <Clock size={20} aria-hidden />
-                <span>
-                  <strong>Elige tu hora</strong>
-                  El local lo prepara para ese momento.
+                  Paga en la app o con tu beca Junaeb al retirar.
                 </span>
               </li>
               <li>
                 <BellRing size={20} aria-hidden />
                 <span>
                   <strong>Te avisamos</strong>
-                  Llegas, muestras tu código y listo.
+                  Llegas, muestras tu código y te vas.
                 </span>
               </li>
             </ol>
@@ -128,7 +127,7 @@ export function Login() {
 
   const quick = async (mail: string) => {
     try {
-      setUser(await api<User>('/auth/login', 'POST', { email: mail, password: 'pickgo123' }));
+      setUser(await api<User>('/auth/login', 'POST', { email: mail, password: 'gobite123' }));
     } catch (err) {
       setDemoError(errorText(err));
     }
@@ -178,19 +177,19 @@ export function Login() {
           <h2>Explora la demo</h2>
           <p>Entra con una cuenta de prueba. Abre dos ventanas para ver los avisos en vivo entre estudiante y local.</p>
           <div className="demo-grid">
-            <button onClick={() => quick('estudiante@pickgo.cl')}>
+            <button onClick={() => quick('estudiante@gobite.cl')}>
               <GraduationCap size={22} aria-hidden />
               Estudiante
             </button>
-            <button onClick={() => quick('copec@pickgo.cl')}>
+            <button onClick={() => quick('cafe@gobite.cl')}>
               <Store size={22} aria-hidden />
               Local
             </button>
-            <button onClick={() => quick('admin@pickgo.cl')}>
+            <button onClick={() => quick('admin@gobite.cl')}>
               <Building2 size={22} aria-hidden />
               Institución
             </button>
-            <button onClick={() => quick('plataforma@pickgo.cl')}>
+            <button onClick={() => quick('plataforma@gobite.cl')}>
               <ShieldCheck size={22} aria-hidden />
               Plataforma
             </button>
@@ -200,7 +199,7 @@ export function Login() {
       )}
 
       <p className="auth-links">
-        ¿Tienes un local en una sede? <Link to="/registro-local">Súmalo a Pick&amp;Go</Link>
+        ¿Tienes un local en una sede? <Link to="/registro-local">Súmalo a {BRAND}</Link>
         <br />
         <Link to="/privacidad">Privacidad y seguridad</Link> · <Link to="/condiciones">Condiciones de uso</Link>
       </p>
@@ -483,10 +482,10 @@ export function Terms({ back = '/' }: { back?: string }) {
     <main className="page prose">
       <TopBar title="Condiciones de uso" back={back} />
       <section className="card">
-        <h2>Qué es Pick&amp;Go</h2>
+        <h2>Qué es {BRAND}</h2>
         <p>
-          Pick&amp;Go conecta a estudiantes con los locales de su sede para pedir por adelantado y retirar a una hora
-          acordada. Pick&amp;Go no vende ni prepara los productos: cada local es responsable de lo que ofrece, de sus
+          {BRAND} conecta a estudiantes con los locales de su sede para pedir por adelantado y retirar a una hora
+          acordada. {BRAND} no vende ni prepara los productos: cada local es responsable de lo que ofrece, de sus
           precios y de la calidad de lo que entrega.
         </p>
       </section>
@@ -497,6 +496,10 @@ export function Terms({ back = '/' }: { back?: string }) {
           <li>Si pagaste en la app y no retiras el pedido, el local igual lo preparó: ese pago no se devuelve.</li>
           <li>Puedes cancelar mientras el local no lo haya aceptado; si pagaste en la app, te devolvemos el pago.</li>
           <li>Si el local rechaza o cancela tu pedido, te devolvemos el pago completo.</li>
+          <li>
+            Si eliges pagar con tu beca Junaeb, pagas en el mesón al retirar, con la app de su operador. {BRAND} no cobra la
+            beca ni ve tu saldo. Si la beca no pasa, pagas con otro medio.
+          </li>
           <li>Si acumulas tres pedidos sin retirar en 30 días, tu cuenta no podrá hacer pedidos nuevos por un tiempo.</li>
           <li>Tu cuenta es personal: no la compartas ni la uses para pedir a nombre de otra persona.</li>
         </ul>
@@ -506,7 +509,8 @@ export function Terms({ back = '/' }: { back?: string }) {
         <ul>
           <li>Mantén tu menú, precios, horarios y disponibilidad al día.</li>
           <li>Acepta solo los pedidos que puedas tener listos a la hora de retiro, y avisa cuando estén listos.</li>
-          <li>Lo pagado en la app se te transfiere descontada la comisión de Pick&amp;Go; los pedidos que aceptes pagar al retirar los cobras tú.</li>
+          <li>Lo pagado en la app se te transfiere descontada la comisión de {BRAND}; los pedidos que aceptes pagar al retirar los cobras tú.</li>
+          <li>Activa la beca Junaeb solo si estás adherido a su operador en tu sede. Esos pedidos los cobras tú, con el sistema del operador.</li>
           <li>La institución puede suspender un local que no cumpla.</li>
         </ul>
       </section>
@@ -525,15 +529,17 @@ export function Terms({ back = '/' }: { back?: string }) {
 }
 
 const FAQ: [string, string][] = [
-  ['¿Cómo funciona Pick&Go?', 'Eliges un local de tu sede, armas tu pedido y escoges a qué hora lo retiras. El local lo recibe al instante y lo prepara para esa hora. Cuando está listo te avisamos; llegas, muestras tu código y te lo llevas.'],
+  [`¿Cómo funciona ${BRAND}?`, 'Eliges un local de tu sede, armas tu pedido y escoges a qué hora lo retiras. El local lo recibe al instante y lo prepara para esa hora. Cuando está listo te avisamos; llegas, muestras tu código y te lo llevas.'],
   ['¿Con cuánta anticipación tengo que pedir?', 'Cada local define cuánto necesita para preparar. La app solo te muestra las horas que todavía alcanzan, partiendo por la más cercana. También puedes dejar pedido para mañana.'],
   ['¿Por qué una hora aparece como "Lleno"?', 'Cada local acepta una cantidad limitada de pedidos cada 10 minutos, para poder tenerlos todos a tiempo. Si una hora se llenó, elige la siguiente.'],
   ['¿Cómo retiro mi pedido?', 'Abre el pedido en la app y muestra el código QR o el código de seis caracteres. El local lo escanea o lo escribe y te entrega tu pedido.'],
   ['¿Puedo cancelar?', 'Sí, mientras el local no haya aceptado el pedido. Después de eso ya no se puede cancelar desde la app.'],
   ['¿Qué pasa si no retiro un pedido?', 'El local lo preparó para ti, así que lo marca como no retirado. Si acumulas tres en 30 días, tu cuenta no puede hacer pedidos nuevos hasta que alguno salga de ese período.'],
   ['¿Cómo pago?', 'Pagas en la app al confirmar el pedido, y el local lo recibe apenas se aprueba el pago. Algunos locales también permiten pagar al retirar. Si el local rechaza tu pedido o cancelas antes de que lo acepte, te devolvemos el pago.'],
+  ['¿Puedo pagar con mi beca Junaeb?', 'Sí, en los locales que dicen «Junaeb». Eliges «Beca Junaeb al retirar» y pagas en el mesón con la app de tu beca: Ticket Junaeb (Edenred) en regiones o Pluxee Chile en la Región Metropolitana. Como tu pedido ya está listo y el monto es exacto, pagar toma segundos. La beca no se puede cobrar dentro de la app: Junaeb no lo permite a apps externas.'],
+  ['¿Para qué sirven mis recreos?', 'Si guardas tus recreos en tu perfil, al pedir te proponemos retirar justo cuando empieza el próximo, y en las horas de retiro marcamos las que calzan con tu horario. Así llegas, retiras y te queda el recreo para comer.'],
   ['¿Qué pasa si cierro la app antes de pagar?', 'Tu pedido queda guardado con la hora reservada por unos minutos. Ábrelo desde Pedidos y toca Pagar. Si no se paga a tiempo, la reserva se libera sola y no se cobra nada.'],
-  ['No me llegan los avisos', 'Actívalos en tu perfil. En iPhone primero debes agregar Pick&Go a tu pantalla de inicio y abrirla desde ahí. Con la app abierta, los avisos llegan siempre.'],
+  ['No me llegan los avisos', `Actívalos en tu perfil. En iPhone primero debes agregar ${BRAND} a tu pantalla de inicio y abrirla desde ahí. Con la app abierta, los avisos llegan siempre.`],
   ['¿Cómo instalo la app?', 'En Android, abre el menú del navegador y elige "Instalar app" o "Agregar a pantalla de inicio". En iPhone, toca Compartir y luego "Agregar a inicio".'],
 ];
 
@@ -566,10 +572,12 @@ export function Privacy({ back = '/' }: { back?: string }) {
           <li>Tus pedidos: qué pediste, en qué local y a qué hora.</li>
           <li>Las calificaciones y comentarios que dejas a los locales.</li>
           <li>Si activas los avisos, el identificador que tu navegador entrega para enviarte notificaciones.</li>
+          <li>Si los indicas, que tienes beca Junaeb y los horarios de tus recreos.</li>
         </ul>
         <p>
           No guardamos los datos de tu tarjeta ni tu ubicación. Los pagos en la app los procesa el proveedor de pagos
-          (Mercado Pago): Pick&amp;Go solo recibe la confirmación de que el pago se aprobó.
+          (Mercado Pago): {BRAND} solo recibe la confirmación de que el pago se aprobó. De tu beca Junaeb no guardamos tu
+          RUT, tu clave ni tu saldo: la pagas directamente en el local.
         </p>
       </section>
       <section className="card">

@@ -1,16 +1,33 @@
 import { ArrowLeft, Star, UtensilsCrossed, X } from 'lucide-react';
 import { Component, useEffect, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { BRAND } from './brand';
 import { STATUS_LABEL, type Status } from './lib';
+
+/** Símbolo de la marca: una hamburguesa en tonos pastel. El mismo dibujo de los íconos de la app. */
+export function Mark({ className = 'mark' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" aria-hidden>
+      <rect className="mark-bg" width="48" height="48" rx="14" />
+      <path fill="#f6c27a" d="M10 21.5C10 13.6 16.2 9.5 24 9.5S38 13.6 38 21.5c0 1-.7 1.6-1.6 1.6H11.6c-.9 0-1.6-.6-1.6-1.6Z" />
+      <g fill="#fff8ec">
+        <ellipse cx="18.5" cy="15.5" rx="1.4" ry=".8" transform="rotate(-20 18.5 15.5)" />
+        <ellipse cx="24.5" cy="13.4" rx="1.4" ry=".8" />
+        <ellipse cx="29.8" cy="16.2" rx="1.4" ry=".8" transform="rotate(20 29.8 16.2)" />
+      </g>
+      <path fill="#a6d470" d="M9.3 23.3h29.4v1.6c-1.3 1.9-2.8 1.9-4.1 0-1.3 1.9-2.8 1.9-4.1 0-1.3 1.9-2.8 1.9-4.1 0-1.3 1.9-2.8 1.9-4.1 0-1.3 1.9-2.8 1.9-4.1 0-1.3 1.9-2.8 1.9-4.1 0-1.3 1.9-2.3 1.9-3.4.3Z" />
+      <rect fill="#6b4030" x="10.4" y="27.4" width="27.2" height="5.4" rx="2.7" />
+      <path fill="#ffd36b" d="M10.6 26h26.8v2.1H28.6l-2.5 2.9-2.5-2.9H10.6Z" />
+      <path fill="#f6c27a" d="M10.6 33.6h26.8v1.2c0 2.5-2 4.2-4.4 4.2H15c-2.4 0-4.4-1.7-4.4-4.2Z" />
+    </svg>
+  );
+}
 
 export function Logo({ size = 'md' }: { size?: 'md' | 'lg' | 'xl' }) {
   return (
-    <span className={`logo logo-${size}`} aria-label="Pick and Go">
-      <span aria-hidden>Pick</span>
-      <span className="amp" aria-hidden>
-        &amp;
-      </span>
-      <span aria-hidden>Go</span>
+    <span className={`logo logo-${size}`} aria-label={BRAND}>
+      <Mark />
+      <span aria-hidden>{BRAND}</span>
     </span>
   );
 }
@@ -214,7 +231,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
 /** Pantalla de carga: una mano entra por la izquierda, toma la bolsa y se la lleva por la derecha. */
 export function Splash() {
   return (
-    <div className="splash" role="status" aria-label="Cargando Pick and Go">
+    <div className="splash" role="status" aria-label={`Cargando ${BRAND}`}>
       <Logo size="lg" />
       <svg className="grab" viewBox="0 0 300 180" aria-hidden>
         <line className="grab-floor" x1="40" y1="165" x2="260" y2="165" />
@@ -222,7 +239,7 @@ export function Splash() {
         <g className="grab-bag">
           <path className="grab-line" d="M128 86 C128 46 172 46 172 86" />
           <path className="grab-lime" d="M108 84 H192 L186 152 a10 10 0 0 1 -10 9 H124 a10 10 0 0 1 -10 -9 Z" />
-          <path className="grab-line" d="M136 122 l10 10 l19 -22" />
+          <path className="grab-check" d="M136 122 l10 10 l19 -22" />
         </g>
         <g className="grab-hand">
           <rect className="grab-ink" x="-60" y="38" width="172" height="30" rx="15" />

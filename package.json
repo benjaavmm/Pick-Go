@@ -1,9 +1,9 @@
 {
-  "name": "pick-and-go",
+  "name": "gobite",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Pick&Go: pide en los locales de tu sede, elige la hora de retiro y sáltate la fila.",
+  "description": "GoBite: pide entre clases, retira en tu recreo y paga en la app o con tu beca Junaeb.",
   "engines": {
     "node": ">=22.13"
   },

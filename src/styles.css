@@ -1,82 +1,101 @@
-/* Pick&Go — sistema visual
-   Tinta + lima sobre papel cálido. La lima marca "lo que puedes hacer ahora":
-   la hora más cercana, el botón principal, el pedido listo. */
+/* GoBite — sistema visual
+   Una hamburguesa en tonos pastel: pan dorado de fondo, tomate para la acción principal ("lo que puedes hacer
+   ahora": la hora más cercana, el botón principal, el pedido listo), lechuga para la beca Junaeb y lo que ahorras,
+   queso para los avisos y la carne como tinta. */
 :root {
   --font-display: 'Bricolage Grotesque Variable', 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-body: 'Figtree Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
-  --bg: #f3f0e8;
+  /* Ingredientes: se usan en el logo, en las capas bajo la portada y en la pantalla de carga. */
+  --bun: #f4bd72;
+  --lettuce: #a6d470;
+  --tomato: #ef7b63;
+  --cheese: #ffd36b;
+  --patty: #6b4030;
+
+  --bg: #fdf7ee;
   --surface: #ffffff;
-  --surface-2: #e9e5d9;
-  --ink: #11150f;
-  --ink-2: #51594c;
-  --ink-3: #7c8476;
-  --line: #dcd7c9;
-  --accent: #c9f23d;
-  --accent-strong: #b5e01c;
-  --on-accent: #141c00;
-  --outline: #11150f; /* contorno de los elementos lima sobre fondos claros */
-  --link: #3c6b00;
-  /* Paneles destacados (portada, encabezados): lima pálido, nunca negro en el tema claro. */
-  --dark: #e6f7ac;
-  --on-dark: #11150f;
-  --on-dark-2: #4a543f;
-  --veil: rgba(17, 21, 15, 0.08);
-  --veil-2: rgba(17, 21, 15, 0.14);
-  --pop: #11150f; /* resalte sobre los paneles destacados */
+  --surface-2: #f6ebdc;
+  --ink: #3a2318;
+  --ink-2: #6f5446;
+  --ink-3: #9b8273;
+  --line: #eedfcb;
+  --accent: #c9472f;
+  --accent-strong: #b03a24;
+  --accent-rgb: 201, 71, 47;
+  --on-accent: #ffffff;
+  --outline: transparent; /* contorno de los elementos de acento (solo hace falta si el acento es claro) */
+  --link: #a83a24;
+  /* Paneles destacados (portada, encabezados): pan pastel, nunca oscuro en el tema claro. */
+  --dark: #fde3bb;
+  --on-dark: #3a2318;
+  --on-dark-2: #6b5040;
+  --veil: rgba(58, 35, 24, 0.07);
+  --veil-2: rgba(58, 35, 24, 0.13);
+  --pop: #c9472f; /* resalte sobre los paneles destacados */
   --warn: #e8a317;
-  --warn-soft: #fbefcc;
-  --warn-text: #744d00;
-  --info: #3d6bf2;
-  --info-soft: #e3eafe;
-  --info-text: #1f3fa8;
-  --ok-soft: #e6f5b3;
-  --ok-text: #365400;
-  --danger: #d8432a;
-  --danger-soft: #fbe3de;
-  --danger-text: #a02815;
-  --bar: #cbc6b6;
-  --bar-hot: #9fcc00;
-  --shadow: 0 1px 2px rgba(17, 21, 15, 0.05), 0 6px 18px rgba(17, 21, 15, 0.06);
-  --shadow-up: 0 10px 30px rgba(17, 21, 15, 0.22);
+  --warn-soft: #fff0c7;
+  --warn-text: #765100;
+  --info: #3f74d6;
+  --info-soft: #e3ecfb;
+  --info-text: #234c9c;
+  --ok-soft: #e4f2e2;
+  --ok-text: #2f6a3a;
+  --danger: #d23d2c;
+  --danger-soft: #fde3dd;
+  --danger-text: #9d2716;
+  /* Beca Junaeb: lechuga, para reconocerla de un vistazo. */
+  --baes: #5c9330;
+  --baes-soft: #e6f3d6;
+  --baes-text: #3e6a1c;
+  --bar: #ead6bf;
+  --bar-hot: #c9472f;
+  --shadow: 0 1px 2px rgba(58, 35, 24, 0.05), 0 6px 18px rgba(58, 35, 24, 0.07);
+  --shadow-up: 0 10px 30px rgba(58, 35, 24, 0.22);
   --r: 20px;
   --pad: 16px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   color-scheme: light;
 }
 
-/* Tema oscuro: opcional, se elige en el perfil. */
+/* Tema oscuro: opcional, se elige en el perfil. Pan tostado de noche. */
 @media all {
   :root[data-theme='dark'] {
-    --bg: #0c0f0b;
-    --surface: #171b15;
-    --surface-2: #21271e;
-    --ink: #f0f2ea;
-    --ink-2: #a9b1a1;
-    --ink-3: #7b8375;
-    --line: #2c3328;
+    --bg: #1a120e;
+    --surface: #251a15;
+    --surface-2: #30231c;
+    --ink: #fbefe2;
+    --ink-2: #d5bfae;
+    --ink-3: #a08979;
+    --line: #3d2d24;
+    --accent: #c9472f;
+    --accent-strong: #dc5a41;
+    --accent-rgb: 201, 71, 47;
     --outline: transparent;
-    --link: #c9f23d;
-    --dark: #1b2118;
-    --on-dark: #f3f0e8;
-    --on-dark-2: #a9b0a1;
-    --veil: var(--veil);
-    --veil-2: var(--veil-2);
-    --pop: #c9f23d;
+    --link: #f5a08a;
+    --dark: #35251c;
+    --on-dark: #fbefe2;
+    --on-dark-2: #d5bfae;
+    --veil: rgba(255, 240, 225, 0.07);
+    --veil-2: rgba(255, 240, 225, 0.13);
+    --pop: #f5a08a;
     --warn-soft: #3a2e0c;
     --warn-text: #f3c968;
     --info-soft: #17234a;
     --info-text: #a9beff;
-    --ok-soft: #27340b;
-    --ok-text: #cdeb6e;
+    --ok-soft: #15301c;
+    --ok-text: #9fdcab;
     --danger: #ff6b52;
     --danger-soft: #3d1810;
     --danger-text: #ff9c8a;
-    --bar: #3a4234;
-    --bar-hot: #c9f23d;
-    --shadow: 0 0 0 1px #262c22;
-    --shadow-up: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px #2c3328;
+    --baes: #8cc95e;
+    --baes-soft: #22301a;
+    --baes-text: #bde59b;
+    --bar: #4a382d;
+    --bar-hot: #ef7b63;
+    --shadow: 0 0 0 1px #33251e;
+    --shadow-up: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px #3d2d24;
     color-scheme: dark;
   }
 }
@@ -150,24 +169,21 @@ svg {
   align-items: center;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.45rem;
-  letter-spacing: -0.04em;
+  font-size: 1.5rem;
+  letter-spacing: -0.045em;
   line-height: 1;
   color: inherit;
   white-space: nowrap;
 }
-.logo .amp {
-  display: inline-grid;
-  place-items: center;
-  width: 1.15em;
-  height: 1.15em;
-  margin: 0 0.06em;
-  border-radius: 0.36em;
-  background: var(--accent);
-  color: var(--on-accent);
-  box-shadow: 0 0 0 0.07em var(--outline);
+.mark {
+  width: 1.2em;
+  height: 1.2em;
+  margin-right: 0.18em;
+  flex: none;
   transform: rotate(-8deg);
-  font-size: 0.92em;
+}
+.mark .mark-bg {
+  fill: var(--accent);
 }
 .logo-lg {
   font-size: 1.9rem;
@@ -217,24 +233,31 @@ svg {
   animation: grab-hand 2s cubic-bezier(0.6, 0, 0.3, 1) infinite;
 }
 .grab-ink {
-  fill: #11150f;
+  fill: #3a2318;
 }
 .grab-lime {
-  fill: #c9f23d;
-  stroke: #11150f;
+  fill: #ef7b63;
+  stroke: #3a2318;
   stroke-width: 4;
+  stroke-linejoin: round;
+}
+.grab-check {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 5;
+  stroke-linecap: round;
   stroke-linejoin: round;
 }
 .grab-skin {
   fill: #fff;
-  stroke: #11150f;
+  stroke: #3a2318;
   stroke-width: 4;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 .grab-line {
   fill: none;
-  stroke: #11150f;
+  stroke: #3a2318;
   stroke-width: 5;
   stroke-linecap: round;
 }
@@ -806,10 +829,10 @@ label small {
 @keyframes pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(201, 242, 61, 0.7);
+    box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.55);
   }
   50% {
-    box-shadow: 0 0 0 10px rgba(201, 242, 61, 0);
+    box-shadow: 0 0 0 10px rgba(var(--accent-rgb), 0);
   }
 }
 @keyframes blink {
@@ -906,8 +929,8 @@ label small {
   width: 100%;
 }
 .opt-choice.on {
-  border-color: var(--ink);
-  background: var(--ok-soft);
+  border-color: var(--accent);
+  background: var(--dark);
 }
 .opt-choice .grow {
   font-weight: 700;
@@ -1021,7 +1044,7 @@ label small {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(8, 10, 7, 0.6);
+  background: rgba(10, 7, 20, 0.6);
   display: grid;
   align-items: end;
   justify-items: center;
@@ -1094,8 +1117,8 @@ label small {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: var(--ok-soft);
-  color: var(--ok-text);
+  background: var(--dark);
+  color: var(--on-dark);
   padding: 12px 14px;
   border-radius: 16px;
 }
@@ -1189,6 +1212,7 @@ label small {
 .auth-hero {
   background: var(--dark);
   color: var(--on-dark);
+  box-shadow: 0 8px 0 var(--lettuce), 0 15px 0 var(--cheese), 0 22px 0 var(--tomato);
   padding: calc(22px + env(safe-area-inset-top, 0px)) 22px 54px;
   border-radius: 0 0 34px 34px;
   display: grid;
@@ -1399,7 +1423,9 @@ label small {
 .hero {
   background: var(--dark);
   color: var(--on-dark);
-  margin: calc(-12px - env(safe-area-inset-top, 0px)) calc(-1 * var(--pad)) 0;
+  /* Capas de hamburguesa bajo el pan: lechuga, queso y tomate. */
+  box-shadow: 0 7px 0 var(--lettuce), 0 13px 0 var(--cheese), 0 19px 0 var(--tomato);
+  margin: calc(-12px - env(safe-area-inset-top, 0px)) calc(-1 * var(--pad)) 19px;
   padding: calc(18px + env(safe-area-inset-top, 0px)) 20px 26px;
   border-radius: 0 0 30px 30px;
   display: grid;
@@ -1531,7 +1557,7 @@ label small {
 .ticket-listo .ticket-stub {
   background: transparent;
   color: var(--on-accent);
-  border-left-color: rgba(20, 28, 0, 0.35);
+  border-left-color: rgba(255, 255, 255, 0.35);
 }
 
 .again,
@@ -1953,7 +1979,7 @@ label small {
   color: var(--accent);
 }
 .pass-listo .progress li {
-  background: rgba(20, 28, 0, 0.2);
+  background: rgba(255, 255, 255, 0.25);
 }
 .pass-listo .progress li.done {
   background: var(--on-accent);
@@ -2785,6 +2811,256 @@ th.num {
 }
 
 /* Impresión de comandas: solo el pedido elegido, en negro sobre blanco. */
+/* ---------- beca Junaeb y recreos ---------- */
+.section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-weight: 800;
+  font-size: 0.86rem;
+}
+.filter-chip.on {
+  background: var(--baes-soft);
+  border-color: var(--baes);
+  color: var(--baes-text);
+}
+.baes-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--baes-soft);
+  color: var(--baes-text);
+  font-weight: 800;
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+}
+.notice-baes {
+  background: var(--baes-soft);
+  color: var(--baes-text);
+}
+.notice-break {
+  background: var(--dark);
+  color: var(--on-dark);
+}
+.notice-break svg,
+.break-card > svg {
+  color: var(--accent);
+  flex: none;
+}
+.break-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--dark);
+  color: var(--on-dark);
+  text-decoration: none;
+  box-shadow: none;
+}
+.break-card .grow {
+  display: grid;
+  gap: 2px;
+}
+.break-card strong {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.break-card strong small {
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--on-dark-2);
+  letter-spacing: 0;
+}
+.break-card .muted {
+  color: var(--on-dark-2);
+}
+.break-kicker {
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pop);
+}
+.break-empty strong {
+  font-size: 1.02rem;
+}
+.slots button.in-break {
+  position: relative;
+  border-color: var(--accent);
+  background: var(--dark);
+}
+.slots button.in-break::after,
+.legend-dot {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.slots button.in-break::after {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+.slots button.in-break.on {
+  background: var(--accent);
+}
+.slots button.in-break.on::after {
+  background: var(--on-accent);
+}
+.slots-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 0.84rem;
+  color: var(--ink-2);
+}
+.legend-dot {
+  display: inline-block;
+}
+.options .baes-option .option-icon,
+.setting-baes {
+  background: var(--baes-soft);
+  color: var(--baes-text);
+}
+.baes-pay {
+  display: grid;
+  gap: 10px;
+  border: 2px solid var(--baes-soft);
+}
+.baes-pay.ready {
+  border-color: var(--baes);
+}
+.baes-pay header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.baes-pay header > svg {
+  color: var(--baes);
+  flex: none;
+}
+.baes-pay header .grow {
+  display: grid;
+}
+.baes-pay strong {
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+.baes-kicker,
+.charge-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--baes-text);
+}
+.baes-pay ol {
+  margin: 0;
+  padding-left: 1.2em;
+  list-style: decimal;
+  display: grid;
+  gap: 6px;
+  color: var(--ink-2);
+}
+.collect-baes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--baes-text);
+  background: var(--baes-soft);
+  padding: 6px 10px;
+  border-radius: 10px;
+}
+.charge {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--baes-soft);
+  color: var(--baes-text);
+}
+.charge-amount {
+  font-family: var(--font-display);
+  font-size: 2.6rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.charge p {
+  color: var(--ink-2);
+}
+.breaks {
+  display: grid;
+  gap: 12px;
+  scroll-margin-top: 16px;
+}
+.breaks-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.breaks-head p.muted {
+  font-size: 0.92rem;
+  margin-top: 2px;
+}
+.break-list {
+  display: grid;
+  gap: 8px;
+}
+.break-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 6px 10px 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.break-list .grow {
+  display: grid;
+}
+.break-list strong {
+  font-variant-numeric: tabular-nums;
+}
+.operator {
+  display: grid;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+.operator select {
+  min-height: 40px;
+  font-size: 0.92rem;
+}
+.shop-admin .muted.small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 @media print {
   body.printing * {
     visibility: hidden;

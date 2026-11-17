@@ -44,15 +44,15 @@ const login = async (base, email) => {
 };
 
 test('modo de prueba: el pedido llega al local solo cuando se paga, y se reembolsa si el local lo rechaza', async () => {
-  const { db, app, base } = await start(createPayments({ PICKGO_PAYMENTS: 'simulado' }));
-  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Pronto Copec'").get();
+  const { db, app, base } = await start(createPayments({ GOBITE_PAYMENTS: 'simulado' }));
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Café Andén'").get();
   const agua = db.prepare("SELECT id FROM products WHERE shop_id = ? AND name = 'Agua mineral'").get(shop.id).id;
-  const student = await login(base, 'estudiante@pickgo.cl');
-  const local = await login(base, 'copec@pickgo.cl');
-  const owner = await login(base, 'plataforma@pickgo.cl');
+  const student = await login(base, 'estudiante@gobite.cl');
+  const local = await login(base, 'cafe@gobite.cl');
+  const owner = await login(base, 'plataforma@gobite.cl');
   assert.equal((await student('GET', '/api/config')).body.payments, 'simulado');
 
-  // Pronto Copec no acepta pagar al retirar.
+  // Café Andén no acepta pagar al retirar.
   let r = await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T13:00', paymentMethod: 'local', items: [{ productId: agua, qty: 1 }] });
   assert.equal(r.status, 409);
 
@@ -112,7 +112,7 @@ test('modo de prueba: el pedido llega al local solo cuando se paga, y se reembol
   assert.match(csv, new RegExp(`"${o2.code}";"Entregado";"3000";"240";"2760"`));
   assert.match(csv, /"Total";"";"";"3000";"240";"2760"/);
   // Otro local no puede ver esta liquidación.
-  const other = await login(base, 'pepepug@pickgo.cl');
+  const other = await login(base, 'sangucheria@gobite.cl');
   assert.equal((await fetch(`${base}/api/shop/settlements/${r.body.id}.csv`, { headers: { Cookie: other.cookie() } })).status, 404);
 
   // Comisión configurable: se aplica a lo que se pague desde ahora.
@@ -171,16 +171,16 @@ test('Mercado Pago (API de Orders): crea el cobro, confirma consultando a Mercad
   servers.push(mp);
   const secret = 'secreto-webhook';
   const provider = createPayments(
-    { PICKGO_PAYMENTS: 'mercadopago', PICKGO_MP_ACCESS_TOKEN: 'TEST-token', PICKGO_PUBLIC_URL: 'https://pickgo.test', PICKGO_MP_WEBHOOK_SECRET: secret },
+    { GOBITE_PAYMENTS: 'mercadopago', GOBITE_MP_ACCESS_TOKEN: 'TEST-token', GOBITE_PUBLIC_URL: 'https://gobite.test', GOBITE_MP_WEBHOOK_SECRET: secret },
     { apiBase: `http://127.0.0.1:${mp.address().port}` },
   );
-  assert.throws(() => createPayments({ PICKGO_PAYMENTS: 'mercadopago' }), /PICKGO_MP_ACCESS_TOKEN/);
+  assert.throws(() => createPayments({ GOBITE_PAYMENTS: 'mercadopago' }), /GOBITE_MP_ACCESS_TOKEN/);
   const { db, app, base } = await start(provider);
-  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Pepepug'").get();
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'La Sanguchería'").get();
   const papas = db.prepare("SELECT id FROM products WHERE shop_id = ? AND name = 'Papas fritas'").get(shop.id).id;
-  const student = await login(base, 'estudiante@pickgo.cl');
-  const local = await login(base, 'pepepug@pickgo.cl');
-  const pay = (id, amount = '2000') => Object.assign(orders.get(id), { status: 'processed', status_detail: 'accredited', total_paid_amount: amount });
+  const student = await login(base, 'estudiante@gobite.cl');
+  const local = await login(base, 'sangucheria@gobite.cl');
+  const pay = (id, amount = '1900') => Object.assign(orders.get(id), { status: 'processed', status_detail: 'accredited', total_paid_amount: amount });
 
   const order = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T13:00', items: [{ productId: papas, qty: 1 }] })).body;
   const mpId = order.payment_ref;
@@ -189,10 +189,10 @@ test('Mercado Pago (API de Orders): crea el cobro, confirma consultando a Mercad
   const sent = calls.find((c) => c.url === '/v1/orders' && c.method === 'POST');
   assert.equal(sent.body.type, 'online');
   assert.equal(sent.body.external_reference, `${order.code}-${order.id}`);
-  assert.equal(sent.body.total_amount, '2000');
-  assert.equal(sent.body.items[0].unit_price, '2000');
+  assert.equal(sent.body.total_amount, '1900');
+  assert.equal(sent.body.items[0].unit_price, '1900');
   assert.equal(sent.body.expiration_time, 'PT15M');
-  assert.equal(sent.body.config.online.success_url, `https://pickgo.test/pedidos/${order.id}?pago=1`);
+  assert.equal(sent.body.config.online.success_url, `https://gobite.test/pedidos/${order.id}?pago=1`);
   assert.ok(sent.idem);
 
   // Volver a abrir el pago reutiliza la misma order de Mercado Pago: nunca hay dos cobros abiertos.
@@ -235,7 +235,7 @@ test('Mercado Pago (API de Orders): crea el cobro, confirma consultando a Mercad
   // Un aviso de un cobro que no es de ningún pedido de esta app (por ejemplo, de una base anterior) se ignora,
   // aunque su referencia se parezca a la de un pedido actual.
   const foreign = 'ORDTSTAJENO1';
-  orders.set(foreign, { id: foreign, status: 'processed', status_detail: 'accredited', total_amount: '2000', total_paid_amount: '2000', currency: 'CLP', external_reference: `XXXX-${order.id + 1}` });
+  orders.set(foreign, { id: foreign, status: 'processed', status_detail: 'accredited', total_amount: '1900', total_paid_amount: '1900', currency: 'CLP', external_reference: `XXXX-${order.id + 1}` });
   const pending = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T13:40', items: [{ productId: papas, qty: 1 }] })).body;
   await hook(foreign, signed(foreign));
   await new Promise((r) => setTimeout(r, 100));
@@ -255,4 +255,27 @@ test('Mercado Pago (API de Orders): crea el cobro, confirma consultando a Mercad
   clock = real;
   assert.equal((await student('GET', `/api/orders/${o3.id}`)).body.status, 'cancelado');
   assert.equal(orders.get(o3.payment_ref).status, 'canceled');
+});
+
+test('las variables PICKGO_* siguen funcionando y la base anterior se sigue usando', async () => {
+  const { migrateEnv } = await import('./brand.js');
+  const { dbFileFrom } = await import('./db.js');
+  const warnings = [];
+  const env = migrateEnv({ PICKGO_PAYMENTS: 'simulado', GOBITE_DEMO: '0', PICKGO_DEMO: '1' }, (w) => warnings.push(w));
+  assert.equal(env.GOBITE_PAYMENTS, 'simulado');
+  // Si ya está la variable nueva, manda la nueva.
+  assert.equal(env.GOBITE_DEMO, '0');
+  assert.equal(warnings.length, 1);
+  assert.equal(createPayments(env).mode, 'simulado');
+
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gobite-'));
+  assert.equal(dbFileFrom({}, dir), path.join(dir, 'data', 'gobite.db'));
+  fs.mkdirSync(path.join(dir, 'data'));
+  fs.writeFileSync(path.join(dir, 'data', 'pickgo.db'), '');
+  assert.equal(dbFileFrom({}, dir), path.join(dir, 'data', 'pickgo.db'));
+  assert.equal(dbFileFrom({ GOBITE_DB: path.join(dir, 'data', 'gobite.db') }, dir), path.join(dir, 'data', 'pickgo.db'));
+  assert.equal(dbFileFrom({ GOBITE_DB: '/otra/base.db' }, dir), '/otra/base.db');
 });

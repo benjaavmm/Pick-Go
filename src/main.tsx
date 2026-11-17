@@ -10,6 +10,7 @@ import { OwnerAccess, OwnerAccount, OwnerInstitutions, OwnerLayout, OwnerPayment
 import { ShopLayout, ShopMenu, ShopOrders, ShopSettings, ShopStatsPage } from './pages/shop';
 import { Checkout, Home, TestPayment, OrderDetail, Orders, Profile, ShopPage, StudentLayout } from './pages/student';
 import { AppProvider, applyTheme, useApp } from './state';
+import { BRAND } from './brand';
 import { ErrorBoundary, Loading, Logo, Splash } from './ui';
 import { WifiOff } from 'lucide-react';
 import './styles.css';
@@ -35,7 +36,7 @@ function Routing() {
         <Logo size="lg" />
         <WifiOff size={40} aria-hidden />
         <h1>Sin conexión</h1>
-        <p>No pudimos conectar con Pick&amp;Go. Revisa tu internet; tu sesión sigue abierta.</p>
+        <p>No pudimos conectar con {BRAND}. Revisa tu internet; tu sesión sigue abierta.</p>
         <button className="btn btn-primary" onClick={retry}>
           Reintentar
         </button>

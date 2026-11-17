@@ -21,7 +21,18 @@ export interface Cart {
   lines: CartLine[];
 }
 const EMPTY_CART: Cart = { shopId: null, shopName: '', lines: [] };
-const CART_KEY = 'pickgo.cart';
+
+// Tras el cambio de nombre, lo que el navegador guardaba con el prefijo anterior pasa al nuevo una sola vez.
+try {
+  for (const k of ['cart', 'theme', 'autoprint']) {
+    const old = localStorage.getItem(`pickgo.${k}`);
+    if (old !== null && localStorage.getItem(`gobite.${k}`) === null) localStorage.setItem(`gobite.${k}`, old);
+    localStorage.removeItem(`pickgo.${k}`);
+  }
+} catch {
+  /* almacenamiento no disponible */
+}
+const CART_KEY = 'gobite.cart';
 
 export interface OrderEvent {
   type: 'new' | 'update';
@@ -38,15 +49,15 @@ interface Toast {
 export type PushState = 'on' | 'off' | 'denied' | 'ios-install' | 'unsupported';
 
 export type Theme = 'claro' | 'oscuro' | 'auto';
-const THEME_KEY = 'pickgo.theme';
+const THEME_KEY = 'gobite.theme';
 /** La pantalla de carga se muestra al menos este tiempo, para que la animación se vea completa. */
 const SPLASH_MS = 2000;
 
 // Se calcula una sola vez por carga de página: true solo la primera vez que se abre la app en esta sesión.
 const SHOW_INTRO = (() => {
   try {
-    if (sessionStorage.getItem('pickgo.intro')) return false;
-    sessionStorage.setItem('pickgo.intro', '1');
+    if (sessionStorage.getItem('gobite.intro')) return false;
+    sessionStorage.setItem('gobite.intro', '1');
   } catch {
     /* almacenamiento no disponible */
   }
@@ -121,8 +132,8 @@ export function useOrderEvents(handler: (e: OrderEvent) => void) {
   ref.current = handler;
   useEffect(() => {
     const fn = (e: Event) => ref.current((e as CustomEvent<OrderEvent>).detail);
-    window.addEventListener('pickgo:order', fn);
-    return () => window.removeEventListener('pickgo:order', fn);
+    window.addEventListener('gobite:order', fn);
+    return () => window.removeEventListener('gobite:order', fn);
   }, []);
 }
 
@@ -318,10 +329,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           navigator.vibrate?.([200, 100, 200]);
         }
       }
-      window.dispatchEvent(new CustomEvent('pickgo:order', { detail }));
+      window.dispatchEvent(new CustomEvent('gobite:order', { detail }));
     });
     // Tras recuperar la conexión o volver a la app, las pantallas recargan sus datos.
-    const refresh = () => window.dispatchEvent(new Event('pickgo:refresh'));
+    const refresh = () => window.dispatchEvent(new Event('gobite:refresh'));
     let wasDown = false;
     es.onerror = () => {
       wasDown = true;
@@ -499,8 +510,8 @@ export function useLoad<T>(loader: () => Promise<T>, deps: unknown[]) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(reload, deps);
   useEffect(() => {
-    window.addEventListener('pickgo:refresh', reload);
-    return () => window.removeEventListener('pickgo:refresh', reload);
+    window.addEventListener('gobite:refresh', reload);
+    return () => window.removeEventListener('gobite:refresh', reload);
   }, [reload]);
   return { data, error, reload, setData };
 }

@@ -1,6 +1,10 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { BRAND } from './brand.js';
+import { operatorForCity } from './baes.js';
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -15,7 +19,8 @@ CREATE TABLE IF NOT EXISTS campuses (
   id INTEGER PRIMARY KEY,
   institution_id INTEGER NOT NULL REFERENCES institutions(id),
   name TEXT NOT NULL,
-  city TEXT NOT NULL
+  city TEXT NOT NULL,
+  baes_operator TEXT NOT NULL DEFAULT 'edenred' -- operador de la beca Junaeb en la sede: edenred | pluxee
 );
 CREATE TABLE IF NOT EXISTS shops (
   id INTEGER PRIMARY KEY,
@@ -32,6 +37,7 @@ CREATE TABLE IF NOT EXISTS shops (
   auto_accept INTEGER NOT NULL DEFAULT 0,      -- los pedidos nuevos pasan directo a preparación
   days TEXT NOT NULL DEFAULT '0123456',        -- días que atiende: 0 = domingo … 6 = sábado
   pay_at_shop INTEGER NOT NULL DEFAULT 0,      -- también acepta pedidos que se pagan al retirar
+  accepts_baes INTEGER NOT NULL DEFAULT 0,     -- acepta la beca Junaeb (BAES) al retirar: está adherido al operador
   promos TEXT NOT NULL DEFAULT '[]',           -- descuentos por hora de retiro (JSON): [{from, to, percent}]
   loyalty_every INTEGER NOT NULL DEFAULT 0,    -- tarjeta de sellos: un premio cada N pedidos entregados (0 = apagada)
   loyalty_max INTEGER NOT NULL DEFAULT 0,      -- valor máximo del producto de regalo
@@ -48,6 +54,8 @@ CREATE TABLE IF NOT EXISTS users (
   campus_id INTEGER REFERENCES campuses(id),
   shop_id INTEGER REFERENCES shops(id),
   institution_id INTEGER REFERENCES institutions(id),  -- solo para administradores
+  baes INTEGER NOT NULL DEFAULT 0,             -- el estudiante tiene beca Junaeb: se le propone pagar con ella
+  breaks TEXT NOT NULL DEFAULT '[]',           -- recreos del estudiante (JSON): [{days, from, to}]
   created_at TEXT NOT NULL,
   deleted_at TEXT
 );
@@ -114,8 +122,10 @@ CREATE TABLE IF NOT EXISTS orders (
   shop_id INTEGER NOT NULL REFERENCES shops(id),
   slot TEXT NOT NULL,                          -- hora de retiro, 'AAAA-MM-DDTHH:MM' hora de Chile
   status TEXT NOT NULL,                        -- recibido | preparando | listo | entregado | cancelado | no_retirado
-  payment_method TEXT NOT NULL DEFAULT 'local', -- 'app' (pagado en la app) o 'local' (se paga al retirar)
-  payment_status TEXT NOT NULL DEFAULT '',     -- solo pago en la app: pendiente | aprobado | expirado | reembolsado | reembolso_fallido
+  payment_method TEXT NOT NULL DEFAULT 'local', -- 'app' (pagado en la app), 'local' (se paga al retirar) o 'junaeb' (beca, al retirar)
+  -- pago en la app: pendiente | aprobado | expirado | reembolsado | reembolso_fallido
+  -- junaeb: '' hasta entregar; aprobado (cobrado con la beca) | otro_medio (la beca no pasó y pagó de otra forma)
+  payment_status TEXT NOT NULL DEFAULT '',
   payment_ref TEXT NOT NULL DEFAULT '',        -- identificador del pago en el proveedor
   fee INTEGER NOT NULL DEFAULT 0,              -- comisión de la plataforma sobre este pedido
   settlement_id INTEGER REFERENCES settlements(id), -- liquidación en que se le pagó al local
@@ -154,7 +164,8 @@ CREATE INDEX IF NOT EXISTS order_events_order ON order_events(order_id);
 `;
 
 // Cambios de esquema posteriores a la versión 3, en orden. Cada entrada lleva la base de la versión N a la N+1
-// sin perder datos (por ejemplo: 3: 'ALTER TABLE shops ADD COLUMN phone TEXT'). Nunca se edita una entrada ya publicada.
+// sin perder datos (por ejemplo: 3: 'ALTER TABLE shops ADD COLUMN phone TEXT'), o es una función que recibe la base.
+// Nunca se edita una entrada ya publicada.
 const MIGRATIONS = {
   3: 'ALTER TABLE shops ADD COLUMN auto_accept INTEGER NOT NULL DEFAULT 0',
   4: `ALTER TABLE shops ADD COLUMN days TEXT NOT NULL DEFAULT '0123456';
@@ -193,12 +204,34 @@ const MIGRATIONS = {
         created_at TEXT NOT NULL,
         PRIMARY KEY (user_id, product_id)
       );`,
+  7: (db) => {
+    const has = (table) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+    db.exec(`ALTER TABLE shops ADD COLUMN accepts_baes INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE users ADD COLUMN baes INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE users ADD COLUMN breaks TEXT NOT NULL DEFAULT '[]';`);
+    if (!has('campuses')) return;
+    db.exec(`ALTER TABLE campuses ADD COLUMN baes_operator TEXT NOT NULL DEFAULT 'edenred'`);
+    // El operador de cada sede existente se deduce de su ciudad; la institución lo puede corregir.
+    const set = db.prepare('UPDATE campuses SET baes_operator = ? WHERE id = ?');
+    for (const c of db.prepare('SELECT id, city FROM campuses').all()) set.run(operatorForCity(c.city), c.id);
+  },
 };
 const FIRST_MIGRATABLE = 3;
 
 /**
+ * Archivo de la base: GOBITE_DB o data/gobite.db. Si ese archivo todavía no existe pero junto a él está la base
+ * de antes del cambio de nombre (pickgo.db), se sigue usando esa para no perder datos.
+ */
+export function dbFileFrom(env, root) {
+  const file = env.GOBITE_DB ?? path.join(root, 'data', 'gobite.db');
+  const legacy = path.join(path.dirname(file), 'pickgo.db');
+  if (path.basename(file) === 'gobite.db' && !fs.existsSync(file) && fs.existsSync(legacy)) return legacy;
+  return file;
+}
+
+/**
  * Abre la base y aplica las migraciones pendientes. Si el archivo es anterior a la primera versión migrable
- * (solo existieron con datos de demostración) lanza un error con code 'PICKGO_OLD_DB'.
+ * (solo existieron con datos de demostración) lanza un error con code 'OLD_DB'.
  */
 export function openDb(file) {
   const db = new DatabaseSync(file);
@@ -206,8 +239,8 @@ export function openDb(file) {
   const hasTables = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'").get();
   if (hasTables && (version < FIRST_MIGRATABLE || version > SCHEMA_VERSION)) {
     db.close();
-    throw Object.assign(new Error('La base de datos es de una versión incompatible de Pick&Go.'), {
-      code: 'PICKGO_OLD_DB',
+    throw Object.assign(new Error(`La base de datos es de una versión incompatible de ${BRAND}.`), {
+      code: 'OLD_DB',
     });
   }
   db.exec('PRAGMA foreign_keys = ON;');
@@ -219,7 +252,9 @@ export function openDb(file) {
   for (; version < SCHEMA_VERSION; version++) {
     db.exec('BEGIN');
     try {
-      db.exec(MIGRATIONS[version]);
+      const step = MIGRATIONS[version];
+      if (typeof step === 'function') step(db);
+      else db.exec(step);
       db.exec(`PRAGMA user_version = ${version + 1}`);
       db.exec('COMMIT');
     } catch (e) {

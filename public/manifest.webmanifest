@@ -1,23 +1,48 @@
 {
   "id": "/",
-  "name": "Pick&Go",
-  "short_name": "Pick&Go",
-  "description": "Pide en los locales de tu sede, elige la hora de retiro y sáltate la fila.",
+  "name": "GoBite",
+  "short_name": "GoBite",
+  "description": "Pide entre clases y retira sin fila: la hora de retiro según tus recreos, pago en la app o con tu beca Junaeb.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#11150f",
-  "theme_color": "#11150f",
+  "background_color": "#fde3bb",
+  "theme_color": "#c9472f",
   "lang": "es-CL",
-  "categories": ["food", "education", "productivity"],
+  "categories": [
+    "food",
+    "education",
+    "productivity"
+  ],
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ],
   "shortcuts": [
-    { "name": "Mis pedidos", "url": "/pedidos" },
-    { "name": "Carrito", "url": "/carrito" }
+    {
+      "name": "Mis pedidos",
+      "url": "/pedidos"
+    },
+    {
+      "name": "Carrito",
+      "url": "/carrito"
+    }
   ]
 }

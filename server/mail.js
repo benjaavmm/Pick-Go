@@ -1,20 +1,21 @@
 import nodemailer from 'nodemailer';
+import { BRAND } from './brand.js';
 
 /**
  * Envío de correos por SMTP (sirve con cualquier proveedor). Se activa solo si están definidas:
- *   PICKGO_SMTP_URL    por ejemplo smtps://usuario:clave@smtp.proveedor.com
- *   PICKGO_MAIL_FROM   por ejemplo "Pick&Go <no-responder@tudominio.cl>"
- *   PICKGO_PUBLIC_URL  la dirección pública de la app, para armar los enlaces de los correos
+ *   GOBITE_SMTP_URL    por ejemplo smtps://usuario:clave@smtp.proveedor.com
+ *   GOBITE_MAIL_FROM   por ejemplo "GoBite <no-responder@tudominio.cl>"
+ *   GOBITE_PUBLIC_URL  la dirección pública de la app, para armar los enlaces de los correos
  * Sin ellas devuelve null y la app funciona igual, sin las funciones que dependen del correo.
  */
 export function createMailer(env = process.env) {
-  const { PICKGO_SMTP_URL: smtp, PICKGO_MAIL_FROM: from, PICKGO_PUBLIC_URL: publicUrl } = env;
+  const { GOBITE_SMTP_URL: smtp, GOBITE_MAIL_FROM: from, GOBITE_PUBLIC_URL: publicUrl } = env;
   if (!smtp || !from || !publicUrl) return null;
   let base;
   try {
     base = new URL(publicUrl);
   } catch {
-    console.warn('PICKGO_PUBLIC_URL no es una dirección válida: el correo queda desactivado.');
+    console.warn(`GOBITE_PUBLIC_URL no es una dirección válida: el correo de ${BRAND} queda desactivado.`);
     return null;
   }
   const transport = nodemailer.createTransport(smtp);

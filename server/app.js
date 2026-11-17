@@ -14,18 +14,27 @@ import {
   userFromToken,
   verifyPassword,
 } from './auth.js';
+import { OPERATORS, operatorForCity } from './baes.js';
+import { BRAND, CODE_PREFIX, SLUG } from './brand.js';
 import { CHECKOUT_MINUTES } from './payments.js';
 import { addDays, buildSlots, chileNow, chileStamp, isOpenNow, toMinutes } from './time.js';
 
 class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, data) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
-const fail = (status, message) => {
-  throw new HttpError(status, message);
+/** Corta la solicitud con un error. `data` viaja junto al mensaje cuando la app necesita más contexto. */
+const fail = (status, message, data) => {
+  throw new HttpError(status, message, data);
 };
+const clp = new Intl.NumberFormat('es-CL');
+const money = (n) => `$${clp.format(n)}`;
+/** Nombre del operador de la beca Junaeb y de la app que usa el estudiante para pagar. */
+const BAES_APP = { edenred: 'Ticket Junaeb (Edenred)', pluxee: 'Pluxee Chile' };
+const MAX_BREAKS = 12;
 
 const RANK = { recibido: 0, preparando: 1, listo: 2, entregado: 3 };
 const ACTIVE = "('recibido','preparando','listo')";
@@ -243,8 +252,8 @@ export function createApp(
   const userOut = (id) => {
     const u = db
       .prepare(
-        `SELECT u.id, u.name, u.email, u.role, u.campus_id, u.shop_id, u.institution_id,
-                c.name AS campus_name, COALESCE(i.name, ai.name) AS institution,
+        `SELECT u.id, u.name, u.email, u.role, u.campus_id, u.shop_id, u.institution_id, u.baes, u.breaks,
+                c.name AS campus_name, c.baes_operator, COALESCE(i.name, ai.name) AS institution,
                 s.name AS shop_name, s.status AS shop_status
          FROM users u
          LEFT JOIN campuses c ON c.id = u.campus_id
@@ -257,6 +266,11 @@ export function createApp(
     if (u.role === 'student') {
       u.no_shows = noShows(id);
       u.can_order = u.no_shows < NO_SHOW_LIMIT;
+      u.baes = !!u.baes;
+      u.breaks = parseJson(u.breaks);
+    } else {
+      delete u.baes;
+      delete u.breaks;
     }
     return u;
   };
@@ -281,6 +295,8 @@ export function createApp(
       auto_accept: !!s.auto_accept,
       // Sin cobro en la app, todos los pedidos se pagan en el local.
       pay_at_shop: payments ? !!s.pay_at_shop : true,
+      accepts_baes: !!s.accepts_baes,
+      baes_operator: campusOperator(s.campus_id),
       promos: parseJson(s.promos),
       is_open: isOpenNow(s, now()),
       next_slot: next ? { slot: next.slot, day: next.day, time: next.time } : null,
@@ -289,6 +305,8 @@ export function createApp(
     };
   };
 
+  const campusOperator = (campusId) =>
+    db.prepare('SELECT baes_operator FROM campuses WHERE id = ?').get(campusId)?.baes_operator ?? 'edenred';
   const getShop = (id) => db.prepare('SELECT * FROM shops WHERE id = ?').get(id) ?? fail(404, 'No encontramos ese local.');
   /** Local visible para quien consulta: activo, o el propio aunque esté pendiente. */
   const visibleShop = (req, id) => {
@@ -298,8 +316,9 @@ export function createApp(
   };
 
   const ORDER_SELECT = `
-    SELECT o.*, s.name AS shop_name, s.emoji AS shop_emoji, s.location AS shop_location, u.name AS customer_name
-    FROM orders o JOIN shops s ON s.id = o.shop_id JOIN users u ON u.id = o.user_id`;
+    SELECT o.*, s.name AS shop_name, s.emoji AS shop_emoji, s.location AS shop_location, u.name AS customer_name,
+           sc.baes_operator
+    FROM orders o JOIN shops s ON s.id = o.shop_id JOIN users u ON u.id = o.user_id JOIN campuses sc ON sc.id = s.campus_id`;
 
   const orderOut = (o) => ({
     ...o,
@@ -326,7 +345,10 @@ export function createApp(
 
   const STUDENT_PUSH = {
     preparando: (o) => `${o.shop_name} aceptó tu pedido y lo está preparando.`,
-    listo: (o) => `Tu pedido ${o.code} está listo. Pasa a retirarlo en ${o.shop_name}.`,
+    listo: (o) =>
+      o.payment_method === 'junaeb'
+        ? `Tu pedido ${o.code} está listo en ${o.shop_name}. Abre ${BAES_APP[o.baes_operator] ?? 'la app de tu beca'} para pagar ${money(o.total)} en el mesón.`
+        : `Tu pedido ${o.code} está listo. Pasa a retirarlo en ${o.shop_name}.`,
     cancelado: (o) => `${o.shop_name} canceló tu pedido ${o.code}${o.cancel_reason ? `: ${o.cancel_reason}` : '.'}`,
   };
 
@@ -354,7 +376,7 @@ export function createApp(
     if (push) {
       if (by === 'shop' && STUDENT_PUSH[status])
         push.toUser(fresh.user_id, {
-          title: status === 'listo' ? '¡Tu pedido está listo!' : 'Pick&Go',
+          title: status === 'listo' ? '¡Tu pedido está listo!' : BRAND,
           body: STUDENT_PUSH[status](fresh),
           url: `/pedidos/${fresh.id}`,
           tag: `order-${fresh.id}`,
@@ -372,11 +394,11 @@ export function createApp(
 
   const newCode = () => {
     for (let i = 0; i < 20; i++) {
-      let code = 'PG';
+      let code = CODE_PREFIX;
       for (let j = 0; j < 4; j++) code += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)];
       if (!db.prepare('SELECT 1 FROM orders WHERE code = ?').get(code)) return code;
     }
-    return `PG${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    return `${CODE_PREFIX}${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
   };
 
   const emailOf = (v) => {
@@ -503,7 +525,7 @@ export function createApp(
     res.json(
       db
         .prepare(
-          `SELECT c.id, c.name, c.city, i.name AS institution,
+          `SELECT c.id, c.name, c.city, c.baes_operator, i.name AS institution,
                   (SELECT COUNT(*) FROM shops s WHERE s.campus_id = c.id AND s.status = 'activo') AS shops_count
            FROM campuses c JOIN institutions i ON i.id = c.institution_id
            ORDER BY i.name, c.name`,
@@ -564,7 +586,7 @@ export function createApp(
       sendMail({
         to: admin.email,
         subject: `Nuevo local por aprobar: ${shopName}`,
-        text: `${shopName} se registró en Pick&Go y espera tu aprobación para aparecer a los estudiantes.\n\nRevísalo aquí: ${mail?.link('/institucion/locales')}\n\nPick&Go`,
+        text: `${shopName} se registró en ${BRAND} y espera tu aprobación para aparecer a los estudiantes.\n\nRevísalo aquí: ${mail?.link('/institucion/locales')}\n\n${BRAND}`,
       });
     startSession(req, res, id);
     res.status(201).json(userOut(id));
@@ -609,8 +631,8 @@ export function createApp(
     );
     sendMail({
       to: email,
-      subject: 'Recupera tu contraseña de Pick&Go',
-      text: `Hola, ${u.name}:\n\nPara elegir una contraseña nueva abre este enlace. Vale por 30 minutos y se puede usar una sola vez.\n\n${mail.link(`/restablecer?token=${token}`)}\n\nSi no pediste esto, ignora este correo: tu contraseña sigue igual.\n\nPick&Go`,
+      subject: `Recupera tu contraseña de ${BRAND}`,
+      text: `Hola, ${u.name}:\n\nPara elegir una contraseña nueva abre este enlace. Vale por 30 minutos y se puede usar una sola vez.\n\n${mail.link(`/restablecer?token=${token}`)}\n\nSi no pediste esto, ignora este correo: tu contraseña sigue igual.\n\n${BRAND}`,
     });
     res.json(ok);
   });
@@ -649,8 +671,32 @@ export function createApp(
       db.prepare('UPDATE users SET name = ? WHERE id = ?').run(str(b.name, 60, 'Tu nombre'), req.user.id);
     if (b.campusId !== undefined && req.user.role === 'student')
       db.prepare('UPDATE users SET campus_id = ? WHERE id = ?').run(campusOf(b.campusId), req.user.id);
+    if (b.baes !== undefined && req.user.role === 'student')
+      db.prepare('UPDATE users SET baes = ? WHERE id = ?').run(b.baes ? 1 : 0, req.user.id);
+    if (b.breaks !== undefined && req.user.role === 'student')
+      db.prepare('UPDATE users SET breaks = ? WHERE id = ?').run(JSON.stringify(breaksOf(b.breaks)), req.user.id);
     res.json(userOut(req.user.id));
   });
+
+  /**
+   * Recreos del estudiante: días de la semana y rango horario. Con ellos la app le propone retirar justo en su
+   * próximo recreo. Hasta 12, de 5 minutos a 4 horas cada uno.
+   */
+  const breaksOf = (v) => {
+    if (!Array.isArray(v)) fail(400, 'Los recreos no son válidos.');
+    if (v.length > MAX_BREAKS) fail(400, `Puedes guardar hasta ${MAX_BREAKS} recreos.`);
+    return v
+      .map((x) => {
+        const days = [...new Set(String(x?.days ?? ''))].filter((d) => /^[0-6]$/.test(d)).sort().join('');
+        if (!days) fail(400, 'Elige al menos un día para cada recreo.');
+        const from = int(x?.from, 0, 1435, 'El inicio del recreo');
+        const to = int(x?.to, 5, 1440, 'El término del recreo');
+        if (to - from < 5) fail(400, 'Cada recreo debe terminar después de empezar.');
+        if (to - from > 240) fail(400, 'Un recreo puede durar hasta 4 horas.');
+        return { days, from, to };
+      })
+      .sort((a, b) => a.from - b.from);
+  };
 
   app.post('/api/me/password', auth, (req, res) => {
     const b = req.body ?? {};
@@ -669,7 +715,7 @@ export function createApp(
 
   app.get('/api/me/export', auth, (req, res) => {
     const orders = db.prepare(`${ORDER_SELECT} WHERE o.user_id = ? ORDER BY o.id`).all(req.user.id).map(orderOut);
-    res.setHeader('Content-Disposition', 'attachment; filename="mis-datos-pickgo.json"');
+    res.setHeader('Content-Disposition', `attachment; filename="mis-datos-${SLUG}.json"`);
     res.json({ generado: now().toISOString(), cuenta: userOut(req.user.id), pedidos: orders });
   });
 
@@ -944,9 +990,16 @@ export function createApp(
       fail(409, `Tienes ${NO_SHOW_LIMIT} pedidos sin retirar en los últimos 30 días, así que por ahora no puedes hacer pedidos nuevos.`);
     const note = str(b.note, 200, 'La nota', { required: false });
     // Si la plataforma cobra en la app, ese es el camino por defecto; pagar al retirar solo si el local lo acepta.
-    const method = payments ? (b.paymentMethod === 'local' ? 'local' : 'app') : 'local';
-    if (method === 'local' && payments && !shop.pay_at_shop)
-      fail(409, `${shop.name} solo recibe pedidos pagados en la app.`);
+    // La beca Junaeb se paga siempre al retirar, en los locales adheridos a su operador.
+    let method;
+    if (b.paymentMethod === 'junaeb') {
+      if (!shop.accepts_baes) fail(409, `${shop.name} no recibe la beca Junaeb. Elige otro medio de pago.`);
+      method = 'junaeb';
+    } else {
+      method = payments ? (b.paymentMethod === 'local' ? 'local' : 'app') : 'local';
+      if (method === 'local' && payments && !shop.pay_at_shop)
+        fail(409, `${shop.name} solo recibe pedidos pagados en la app.`);
+    }
     // Los precios siempre se calculan aquí: lo que mande el navegador no se usa para cobrar.
     const price = priceOrder(shop, b, req.user.id);
     const { lines, total } = price;
@@ -997,7 +1050,7 @@ export function createApp(
       throw e;
     }
     const order = getOrder(orderId);
-    if (method === 'local') return res.status(201).json(announce(order));
+    if (method !== 'app') return res.status(201).json(announce(order));
     // Pago en la app: el pedido le llega al local recién cuando el pago se aprueba.
     let checkout;
     try {
@@ -1020,7 +1073,7 @@ export function createApp(
     hub.send(`shop:${shop.id}`, 'order', { type: 'new', order: forShop(order) });
     push?.toShop(shop.id, {
       title: `Nuevo pedido para las ${order.slot.slice(11)}`,
-      body: `${order.customer_name}: ${order.items.map((i) => `${i.qty}× ${i.name}`).join(', ')}`,
+      body: `${order.customer_name}: ${order.items.map((i) => `${i.qty}× ${i.name}`).join(', ')}${order.payment_method === 'junaeb' ? ' · paga con Junaeb' : ''}`,
       url: '/panel',
       tag: `order-${order.id}`,
     });
@@ -1236,6 +1289,7 @@ export function createApp(
       auto_accept: b.auto_accept !== undefined ? (b.auto_accept ? 1 : 0) : s.auto_accept,
       days: b.days !== undefined ? daysOfWeek(b.days) : s.days,
       pay_at_shop: b.pay_at_shop !== undefined ? (b.pay_at_shop ? 1 : 0) : s.pay_at_shop,
+      accepts_baes: b.accepts_baes !== undefined ? (b.accepts_baes ? 1 : 0) : s.accepts_baes,
       promos: b.promos !== undefined ? JSON.stringify(promosOf(b.promos)) : s.promos,
       loyalty_every: b.loyalty_every !== undefined ? (b.loyalty_every ? int(b.loyalty_every, 2, 30, 'Los sellos para un premio') : 0) : s.loyalty_every,
       loyalty_max: b.loyalty_max !== undefined ? int(b.loyalty_max, 0, 100_000, 'El valor máximo del premio') : s.loyalty_max,
@@ -1243,7 +1297,7 @@ export function createApp(
     if (next.closes <= next.opens) fail(400, 'La hora de cierre debe ser posterior a la de apertura.');
     if (next.loyalty_every && next.loyalty_max < 1) fail(400, 'Indica el valor máximo del producto de regalo.');
     db.prepare(
-      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?, pay_at_shop=?, promos=?, loyalty_every=?, loyalty_max=?
+      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?, pay_at_shop=?, accepts_baes=?, promos=?, loyalty_every=?, loyalty_max=?
        WHERE id=?`,
     ).run(
       next.name,
@@ -1258,6 +1312,7 @@ export function createApp(
       next.auto_accept,
       next.days,
       next.pay_at_shop,
+      next.accepts_baes,
       next.promos,
       next.loyalty_every,
       next.loyalty_max,
@@ -1288,8 +1343,9 @@ export function createApp(
     // Las celdas que parten con =, +, - o @ se anteponen con ' para que la planilla no las ejecute como fórmula.
     const cell = (v) => `"${String(v ?? '').replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"`;
     const STATUS = { recibido: 'Por aceptar', preparando: 'En preparación', listo: 'Listo', entregado: 'Entregado', cancelado: 'Cancelado', no_retirado: 'No retirado' };
+    const PAYMENT = { app: 'En la app', local: 'En el local', junaeb: 'Beca Junaeb', otro_medio: 'En el local (la beca no pasó)' };
     const lines = [
-      ['Fecha', 'Hora de retiro', 'Código', 'Cliente', 'Productos', 'Total (CLP)', 'Estado', 'Calificación'],
+      ['Fecha', 'Hora de retiro', 'Código', 'Cliente', 'Productos', 'Total (CLP)', 'Pago', 'Estado', 'Calificación'],
       ...rows.map((o) => [
         o.slot.slice(0, 10),
         o.slot.slice(11),
@@ -1297,18 +1353,19 @@ export function createApp(
         o.customer_name,
         o.items.map((i) => `${i.qty}x ${i.name}${i.options.length ? ` (${i.options.map((c) => c.name).join(', ')})` : ''}`).join(' + '),
         o.total,
+        PAYMENT[o.payment_method === 'junaeb' && o.payment_status === 'otro_medio' ? 'otro_medio' : o.payment_method] ?? o.payment_method,
         STATUS[o.status] ?? o.status,
         o.rating ?? '',
       ]),
     ];
     res.set({
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="pickgo-pedidos-${from}-a-${today}.csv"`,
+      'Content-Disposition': `attachment; filename="${SLUG}-pedidos-${from}-a-${today}.csv"`,
     });
     res.send('\ufeff' + lines.map((l) => l.map(cell).join(';')).join('\r\n'));
   });
 
-  // Lo que Pick&Go le generó al local en el período, comparado con el período anterior.
+  // Lo que la app le generó al local en el período, comparado con el período anterior.
   // Los minutos de fila evitados son una estimación con un valor conservador por pedido, y la app lo dice.
   const QUEUE_MINUTES_PER_ORDER = 5;
   app.get('/api/shop/impact', shopOnly, (req, res) => {
@@ -1329,7 +1386,9 @@ export function createApp(
                   COALESCE(SUM(status = 'entregado' AND promo_discount > 0), 0) AS promo_orders,
                   COALESCE(SUM(CASE WHEN status = 'entregado' AND promo_discount > 0 THEN total ELSE 0 END), 0) AS promo_sales,
                   COALESCE(SUM(CASE WHEN status = 'entregado' THEN promo_discount ELSE 0 END), 0) AS promo_given,
-                  COALESCE(SUM(status = 'entregado' AND reward_discount > 0), 0) AS rewards
+                  COALESCE(SUM(status = 'entregado' AND reward_discount > 0), 0) AS rewards,
+                  COALESCE(SUM(status = 'entregado' AND payment_method = 'junaeb' AND payment_status = 'aprobado'), 0) AS baes_orders,
+                  COALESCE(SUM(CASE WHEN status = 'entregado' AND payment_method = 'junaeb' AND payment_status = 'aprobado' THEN total ELSE 0 END), 0) AS baes_sales
            FROM orders WHERE ${base} AND substr(slot, 1, 10) BETWEEN ? AND ?`,
         )
         .get(shopId, a, b);
@@ -1371,6 +1430,8 @@ export function createApp(
       promo_sales: cur.promo_sales,
       promo_given: cur.promo_given,
       rewards: cur.rewards,
+      baes_orders: cur.baes_orders,
+      baes_sales: cur.baes_sales,
     });
   });
 
@@ -1430,7 +1491,17 @@ export function createApp(
     if (o.status === 'entregado') fail(409, `El pedido ${code} ya fue entregado.`);
     if (o.status === 'pago_pendiente') fail(404, `No hay un pedido con el código ${code} en este local.`);
     if (!(o.status in RANK)) fail(409, `El pedido ${code} está cerrado y no se puede entregar.`);
-    res.json(setStatus(o, 'entregado', { paid: true }));
+    // Beca Junaeb: antes de entregar, el local confirma cómo se cobró. Si la beca no pasó (sin saldo, sin señal),
+    // el estudiante paga con otro medio y queda registrado.
+    if (o.payment_method === 'junaeb') {
+      const charge = req.body?.charge;
+      if (charge !== 'junaeb' && charge !== 'otro')
+        fail(409, `Cobra ${money(o.total)} con la beca Junaeb antes de entregar.`, {
+          charge: { orderId: o.id, code: o.code, total: o.total, operator: o.baes_operator, customer: o.customer_name },
+        });
+      db.prepare('UPDATE orders SET payment_status = ? WHERE id = ?').run(charge === 'junaeb' ? 'aprobado' : 'otro_medio', o.id);
+    }
+    res.json(forShop(setStatus(getOrder(o.id), 'entregado', { paid: true })));
   });
 
   // menú del local
@@ -1576,8 +1647,9 @@ export function createApp(
     const campusId = req.query.campus ? Number(req.query.campus) : null;
     const campuses = db
       .prepare(
-        `SELECT c.id, c.name, c.city,
-                (SELECT COUNT(*) FROM users u WHERE u.campus_id = c.id AND u.role = 'student' AND u.deleted_at IS NULL) AS students
+        `SELECT c.id, c.name, c.city, c.baes_operator,
+                (SELECT COUNT(*) FROM users u WHERE u.campus_id = c.id AND u.role = 'student' AND u.deleted_at IS NULL) AS students,
+                (SELECT COUNT(*) FROM shops s WHERE s.campus_id = c.id AND s.status = 'activo' AND s.accepts_baes = 1) AS baes_shops
          FROM campuses c WHERE c.institution_id = ? ORDER BY c.name`,
       )
       .all(req.user.institution_id);
@@ -1614,7 +1686,7 @@ export function createApp(
     if (status !== 'activo' && status !== 'suspendido') fail(400, 'Ese estado no es válido.');
     db.prepare('UPDATE shops SET status = ? WHERE id = ?').run(status, shop.id);
     push?.toShop(shop.id, {
-      title: 'Pick&Go',
+      title: BRAND,
       body: status === 'activo' ? `${shop.name} fue aprobado y ya aparece para los estudiantes.` : `${shop.name} fue suspendido por la institución.`,
       url: '/panel',
       tag: 'shop-status',
@@ -1622,26 +1694,44 @@ export function createApp(
     for (const u of db.prepare("SELECT email FROM users WHERE shop_id = ? AND role = 'shop' AND deleted_at IS NULL").all(shop.id))
       sendMail({
         to: u.email,
-        subject: status === 'activo' ? `${shop.name} ya está activo en Pick&Go` : `${shop.name} fue suspendido en Pick&Go`,
+        subject: status === 'activo' ? `${shop.name} ya está activo en ${BRAND}` : `${shop.name} fue suspendido en ${BRAND}`,
         text:
           status === 'activo'
-            ? `¡Listo! ${shop.name} fue aprobado y ya aparece para los estudiantes.\n\nEntra a tu panel: ${mail?.link('/panel')}\n\nPick&Go`
-            : `${shop.name} fue suspendido por la institución y dejó de aparecer para los estudiantes. Contacta a su administración para más información.\n\nPick&Go`,
+            ? `¡Listo! ${shop.name} fue aprobado y ya aparece para los estudiantes.\n\nEntra a tu panel: ${mail?.link('/panel')}\n\n${BRAND}`
+            : `${shop.name} fue suspendido por la institución y dejó de aparecer para los estudiantes. Contacta a su administración para más información.\n\n${BRAND}`,
       });
     res.json({ ok: true, status });
   });
 
+  const operatorOf = (v, city) => {
+    if (v === undefined || v === null || v === '') return operatorForCity(city);
+    if (!OPERATORS.includes(v)) fail(400, 'El operador de la beca Junaeb no es válido.');
+    return v;
+  };
+
   app.post('/api/admin/campuses', adminOnly, (req, res) => {
     const name = str(req.body?.name, 60, 'El nombre de la sede');
     const city = str(req.body?.city, 60, 'La ciudad');
+    const operator = operatorOf(req.body?.baes_operator, city);
     const dup = db
       .prepare('SELECT 1 FROM campuses WHERE institution_id = ? AND lower(name) = lower(?)')
       .get(req.user.institution_id, name);
     if (dup) fail(409, 'Ya existe una sede con ese nombre.');
     const id = db
-      .prepare('INSERT INTO campuses (institution_id, name, city) VALUES (?,?,?)')
-      .run(req.user.institution_id, name, city).lastInsertRowid;
-    res.status(201).json({ id, name, city });
+      .prepare('INSERT INTO campuses (institution_id, name, city, baes_operator) VALUES (?,?,?,?)')
+      .run(req.user.institution_id, name, city, operator).lastInsertRowid;
+    res.status(201).json({ id, name, city, baes_operator: operator });
+  });
+
+  // Junaeb puede cambiar de operador en una región (pasó en la Región Metropolitana en 2025).
+  app.patch('/api/admin/campuses/:id', adminOnly, (req, res) => {
+    const c = db
+      .prepare('SELECT * FROM campuses WHERE id = ? AND institution_id = ?')
+      .get(Number(req.params.id), req.user.institution_id);
+    if (!c) fail(404, 'No encontramos esa sede.');
+    const operator = operatorOf(req.body?.baes_operator, c.city);
+    db.prepare('UPDATE campuses SET baes_operator = ? WHERE id = ?').run(operator, c.id);
+    res.json({ id: c.id, name: c.name, city: c.city, baes_operator: operator });
   });
 
   // ---------- liquidaciones: lo cobrado en la app que hay que transferir a cada local ----------
@@ -1737,7 +1827,7 @@ export function createApp(
     if (!st) fail(404, 'No encontramos esa liquidación.');
     res.set({
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="pickgo-liquidacion-${st.id}-${st.created_at.slice(0, 10)}.csv"`,
+      'Content-Disposition': `attachment; filename="${SLUG}-liquidacion-${st.id}-${st.created_at.slice(0, 10)}.csv"`,
     });
     res.send(settlementCsv(st));
   };
@@ -1762,7 +1852,7 @@ export function createApp(
     res.json(after);
   });
 
-  // ---------- plataforma: quien opera Pick&Go crea instituciones y sus cuentas de administración ----------
+  // ---------- plataforma: quien opera la app crea instituciones y sus cuentas de administración ----------
   const tempPassword = () => crypto.randomBytes(9).toString('base64url');
 
   app.get('/api/owner/overview', ownerOnly, (_req, res) => {
@@ -1806,7 +1896,7 @@ export function createApp(
     let out;
     try {
       const id = db.prepare('INSERT INTO institutions (name) VALUES (?)').run(name).lastInsertRowid;
-      db.prepare('INSERT INTO campuses (institution_id, name, city) VALUES (?,?,?)').run(id, campus, city);
+      db.prepare('INSERT INTO campuses (institution_id, name, city, baes_operator) VALUES (?,?,?,?)').run(id, campus, city, operatorForCity(city));
       out = { id, name, admin: createAdmin(id, name, b.adminEmail) };
       db.exec('COMMIT');
     } catch (e) {
@@ -1862,7 +1952,7 @@ export function createApp(
   app.use((err, _req, res, _next) => {
     const status = err.status ?? (err.type === 'entity.parse.failed' ? 400 : err.type === 'entity.too.large' ? 413 : 500);
     if (status >= 500) console.error(err);
-    res.status(status).json({ error: status >= 500 ? 'Algo falló en el servidor. Intenta de nuevo.' : err.message });
+    res.status(status).json({ error: status >= 500 ? 'Algo falló en el servidor. Intenta de nuevo.' : err.message, ...(status < 500 && err.data) });
   });
 
   return app;
