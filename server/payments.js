@@ -86,7 +86,6 @@ function mercadoPago({ token, publicUrl, apiBase, fetchImpl, webhookSecret }) {
       status: o.status === 'processed' && o.status_detail === 'accredited' ? 'approved' : o.status,
       amount: Number(o.total_paid_amount && Number(o.total_paid_amount) > 0 ? o.total_paid_amount : o.total_amount),
       currency: o.currency,
-      orderId: Number(o.external_reference),
       checkoutUrl: o.checkout_url,
     };
   const getOrder = async (ref) => (validRef(ref) ? toPayment(await call('GET', `/v1/orders/${ref}`)) : null);
@@ -106,7 +105,8 @@ function mercadoPago({ token, publicUrl, apiBase, fetchImpl, webhookSecret }) {
         {
           type: 'online',
           processing_mode: 'manual',
-          external_reference: String(order.id),
+          // Referencia legible en el panel de Mercado Pago. La app identifica cada cobro por el id de la order.
+          external_reference: `${order.code}-${order.id}`,
           total_amount: String(order.total),
           description: `Pedido ${order.code} · ${order.shop_name}`,
           // El enlace de pago vence junto con la reserva de la hora de retiro.

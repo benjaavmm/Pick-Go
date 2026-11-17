@@ -188,7 +188,7 @@ test('Mercado Pago (API de Orders): crea el cobro, confirma consultando a Mercad
   assert.equal(order.pay_url, `https://www.mercadopago.cl/checkout/v1/redirect?order_id=${mpId}`);
   const sent = calls.find((c) => c.url === '/v1/orders' && c.method === 'POST');
   assert.equal(sent.body.type, 'online');
-  assert.equal(sent.body.external_reference, String(order.id));
+  assert.equal(sent.body.external_reference, `${order.code}-${order.id}`);
   assert.equal(sent.body.total_amount, '2000');
   assert.equal(sent.body.items[0].unit_price, '2000');
   assert.equal(sent.body.expiration_time, 'PT15M');
@@ -231,6 +231,16 @@ test('Mercado Pago (API de Orders): crea el cobro, confirma consultando a Mercad
   assert.equal(refunds.length, 1);
   assert.equal(refunds[0].idem, `refund-${mpId}`);
   assert.equal(orders.get(mpId).status, 'refunded');
+
+  // Un aviso de un cobro que no es de ningún pedido de esta app (por ejemplo, de una base anterior) se ignora,
+  // aunque su referencia se parezca a la de un pedido actual.
+  const foreign = 'ORDTSTAJENO1';
+  orders.set(foreign, { id: foreign, status: 'processed', status_detail: 'accredited', total_amount: '2000', total_paid_amount: '2000', currency: 'CLP', external_reference: `XXXX-${order.id + 1}` });
+  const pending = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T13:40', items: [{ productId: papas, qty: 1 }] })).body;
+  await hook(foreign, signed(foreign));
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal((await student('GET', `/api/orders/${pending.id}`)).body.status, 'pago_pendiente');
+  await student('POST', `/api/orders/${pending.id}/cancel`);
 
   // Al volver del pago, la consulta del estudiante también aprueba (sin esperar el aviso).
   const o2 = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T13:10', items: [{ productId: papas, qty: 1 }] })).body;

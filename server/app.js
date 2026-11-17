@@ -930,6 +930,11 @@ export function createApp(
     const order = getOrder(orderId);
     if (!order || order.payment_method !== 'app' || !payment) return order;
     if (payment.status !== 'approved') return order;
+    // El pago tiene que ser el cobro creado para este pedido, no uno con un número de pedido parecido.
+    if (payments?.mode === 'mercadopago' && payment.ref !== order.payment_ref) {
+      console.warn(`El cobro ${payment.ref} no es el del pedido ${order.code}: no se aplica.`);
+      return order;
+    }
     if (payment.amount !== order.total || (payment.currency && payment.currency !== 'CLP')) {
       console.warn(`El pago ${payment.ref} no coincide con el pedido ${order.code}: no se aprueba.`);
       return order;
@@ -1011,7 +1016,9 @@ export function createApp(
     res.json({ ok: true });
     try {
       const p = await payments.getPayment(dataId);
-      if (p?.orderId) await applyPayment(p.orderId, p);
+      // El pedido se busca por el cobro de Mercado Pago, que es único; nunca por el número que viene en el aviso.
+      const local = p && db.prepare('SELECT id FROM orders WHERE payment_ref = ?').get(p.ref);
+      if (local) await applyPayment(local.id, p);
     } catch (e) {
       console.warn('No se pudo procesar un aviso de pago:', e.message);
     }
