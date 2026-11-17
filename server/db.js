@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS shops (
   auto_accept INTEGER NOT NULL DEFAULT 0,      -- los pedidos nuevos pasan directo a preparación
   days TEXT NOT NULL DEFAULT '0123456',        -- días que atiende: 0 = domingo … 6 = sábado
   pay_at_shop INTEGER NOT NULL DEFAULT 0,      -- también acepta pedidos que se pagan al retirar
+  promos TEXT NOT NULL DEFAULT '[]',           -- descuentos por hora de retiro (JSON): [{from, to, percent}]
+  loyalty_every INTEGER NOT NULL DEFAULT 0,    -- tarjeta de sellos: un premio cada N pedidos entregados (0 = apagada)
+  loyalty_max INTEGER NOT NULL DEFAULT 0,      -- valor máximo del producto de regalo
   -- La institución aprueba cada local antes de que aparezca para los estudiantes.
   status TEXT NOT NULL DEFAULT 'pendiente',
   created_at TEXT NOT NULL DEFAULT ''
@@ -84,8 +87,15 @@ CREATE TABLE IF NOT EXISTS products (
   emoji TEXT NOT NULL DEFAULT '',              -- ícono opcional
   image_id INTEGER REFERENCES images(id),      -- foto opcional
   options TEXT NOT NULL DEFAULT '[]',          -- grupos de opciones (JSON): tamaños, agregados, etc.
+  prep_minutes INTEGER NOT NULL DEFAULT 0,     -- anticipación propia del producto (0 = la del local)
   available INTEGER NOT NULL DEFAULT 1,
   deleted INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS favorites (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  product_id INTEGER NOT NULL REFERENCES products(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, product_id)
 );
 CREATE TABLE IF NOT EXISTS settlements (
   id INTEGER PRIMARY KEY,
@@ -113,6 +123,9 @@ CREATE TABLE IF NOT EXISTS orders (
   total INTEGER NOT NULL,
   note TEXT NOT NULL DEFAULT '',
   cancel_reason TEXT NOT NULL DEFAULT '',      -- motivo que da el local al rechazar o cancelar
+  subtotal INTEGER NOT NULL DEFAULT 0,         -- suma de los productos antes de descuentos
+  promo_discount INTEGER NOT NULL DEFAULT 0,   -- descuento por promoción de horario
+  reward_discount INTEGER NOT NULL DEFAULT 0,  -- descuento por premio de la tarjeta de sellos
   rating INTEGER CHECK (rating BETWEEN 1 AND 5),
   rating_comment TEXT NOT NULL DEFAULT '',
   on_time INTEGER,                             -- 1 si estuvo listo a la hora de retiro o antes
@@ -166,6 +179,20 @@ const MIGRATIONS = {
       ALTER TABLE orders ADD COLUMN fee INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE orders ADD COLUMN settlement_id INTEGER REFERENCES settlements(id);
       ALTER TABLE shops ADD COLUMN pay_at_shop INTEGER NOT NULL DEFAULT 1;`,
+  6: `ALTER TABLE shops ADD COLUMN promos TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE shops ADD COLUMN loyalty_every INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE shops ADD COLUMN loyalty_max INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE products ADD COLUMN prep_minutes INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE orders ADD COLUMN subtotal INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE orders ADD COLUMN promo_discount INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE orders ADD COLUMN reward_discount INTEGER NOT NULL DEFAULT 0;
+      UPDATE orders SET subtotal = total;
+      CREATE TABLE favorites (
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        product_id INTEGER NOT NULL REFERENCES products(id),
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, product_id)
+      );`,
 };
 const FIRST_MIGRATABLE = 3;
 

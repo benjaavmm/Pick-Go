@@ -37,6 +37,10 @@ export interface Shop {
   auto_accept: boolean;
   /** Acepta pedidos que se pagan al retirar. */
   pay_at_shop: boolean;
+  /** Descuentos por hora de retiro, en minutos desde medianoche. */
+  promos: Promo[];
+  loyalty_every: number;
+  loyalty_max: number;
   /** Días que atiende: dígitos de 0 (domingo) a 6 (sábado). */
   days: string;
   status: ShopStatus;
@@ -57,7 +61,49 @@ export interface Product {
   /** Foto opcional. */
   image: string | null;
   options: OptionGroup[];
+  /** Anticipación propia del producto en minutos (0 = la del local). */
+  prep_minutes: number;
   available: boolean;
+}
+export interface Promo {
+  from: number;
+  to: number;
+  percent: number;
+}
+export interface Loyalty {
+  every: number;
+  max: number;
+  /** Sellos acumulados hacia el próximo premio. */
+  stamps: number;
+  /** Premios disponibles para usar. */
+  rewards: number;
+}
+export interface Quote {
+  subtotal: number;
+  promo_discount: number;
+  promo_percent: number;
+  reward_discount: number;
+  total: number;
+  loyalty: Loyalty | null;
+}
+export interface Impact {
+  days: number;
+  delivered: number;
+  sales: number;
+  previous: { delivered: number; sales: number };
+  peak_hours: number[];
+  peak_orders: number;
+  queue_minutes_saved: number;
+  queue_minutes_per_order: number;
+  customers: number;
+  returning: number;
+  new_customers: number;
+  no_show_paid: number;
+  no_show_paid_amount: number;
+  promo_orders: number;
+  promo_sales: number;
+  promo_given: number;
+  rewards: number;
 }
 export interface OptionGroup {
   id: string;
@@ -77,6 +123,8 @@ export interface Slot {
   day: 'hoy' | 'manana';
   time: string;
   remaining: number;
+  /** Descuento por promoción en esa hora de retiro, si hay. */
+  promo?: number;
 }
 export type Status = 'pago_pendiente' | 'recibido' | 'preparando' | 'listo' | 'entregado' | 'cancelado' | 'no_retirado';
 export type PaymentStatus = '' | 'pendiente' | 'aprobado' | 'expirado' | 'reembolsado' | 'reembolso_fallido';
@@ -92,6 +140,9 @@ export interface Order {
   payment_method: 'app' | 'local';
   payment_status: PaymentStatus;
   fee: number;
+  subtotal: number;
+  promo_discount: number;
+  reward_discount: number;
   /** Solo al crear un pedido que se paga en la app: dónde completar el pago. */
   pay_url?: string;
   total: number;
@@ -305,3 +356,6 @@ export function paymentText(o: Pick<Order, 'payment_method' | 'payment_status' |
   return o.paid ? 'Pagado en el local' : 'Se paga en el local al retirar';
 }
 export const firstName = (name: string) => name.trim().split(/\s+/)[0];
+
+/** "15 % menos retirando entre 15:00 y 16:30" */
+export const promoText = (p: Promo) => `${p.percent} % menos retirando entre ${hhmm(p.from)} y ${hhmm(p.to)}`;

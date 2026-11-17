@@ -270,6 +270,15 @@ export function seedIfEmpty(db, { now = new Date(), history = true } = {}) {
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('commission_bps', ?)").run(String(DEMO_COMMISSION_BPS));
   // En la demo, el Casino también acepta pagar al retirar; los demás solo cobran en la app.
   db.prepare("UPDATE shops SET pay_at_shop = 1 WHERE name = 'Casino'").run();
+  // Ejemplos de promociones en horas tranquilas y tarjetas de sellos.
+  db.prepare("UPDATE shops SET promos = ?, loyalty_every = 5, loyalty_max = 2500 WHERE name = 'Pronto Copec'").run(
+    JSON.stringify([{ from: 660, to: 720, percent: 10 }, { from: 900, to: 990, percent: 15 }]),
+  );
+  db.prepare("UPDATE shops SET promos = ?, loyalty_every = 6, loyalty_max = 2000 WHERE name = 'Pepepug'").run(
+    JSON.stringify([{ from: 960, to: 1080, percent: 10 }]),
+  );
+  // El menú del día necesita más tiempo que el resto del Casino.
+  db.prepare("UPDATE products SET prep_minutes = 25 WHERE name IN ('Menú del día', 'Menú vegetariano')").run();
   insUser.run('Equipo Pick&Go', 'plataforma@pickgo.cl', passHash, 'owner', null, null, null, nowIso);
   const studentIds = [insUser.run('Estudiante Demo', 'estudiante@pickgo.cl', passHash, 'student', firstCampus, null, null, nowIso).lastInsertRowid];
   if (history) {

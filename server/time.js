@@ -71,3 +71,9 @@ export function chileStamp(now = new Date()) {
   const { date, minutes } = chileNow(now);
   return `${date}T${hhmm(minutes)}`;
 }
+
+/** 'HH:MM' -> minutos desde medianoche. */
+export function toMinutes(t) {
+  const [h, m] = String(t).split(':').map(Number);
+  return h * 60 + m;
+}

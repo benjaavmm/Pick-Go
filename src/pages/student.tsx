@@ -1,4 +1,7 @@
 import {
+  Percent,
+  Heart,
+  Gift,
   Check,
   ChevronRight,
   Clock,
@@ -35,7 +38,10 @@ import {
   slotLabel,
   STATUS_LABEL,
   type Order,
+  type Loyalty,
   type OptionGroup,
+  type Quote,
+  promoText,
   type Product,
   type Shop,
   type Slot,
@@ -205,6 +211,7 @@ export function Home() {
   const campusId = user!.campus_id;
   const shops = useLoad(() => api<Shop[]>(`/campuses/${campusId}/shops`), [campusId]);
   const orders = useLoad(() => api<Order[]>('/orders'), []);
+  const favorites = useLoad(() => api<(Product & { shop_name: string })[]>('/favorites'), [campusId]);
   useOrderEvents(orders.reload);
   useTick();
   const active = (orders.data ?? []).filter((o) => isOpenOrder(o.status));
@@ -297,6 +304,22 @@ export function Home() {
               ))}
             </ul>
           )}
+        </section>
+      )}
+
+      {!searching && (favorites.data?.length ?? 0) > 0 && (
+        <section aria-label="Tus favoritos">
+          <h2 className="section">Tus favoritos</h2>
+          <div className="fav-row">
+            {favorites.data!.map((f) => (
+              <Link key={f.id} to={`/local/${f.shop_id}`} className="fav-card">
+                <ProductTile image={f.image} emoji={f.emoji} />
+                <strong>{f.name}</strong>
+                <span className="muted">{f.shop_name}</span>
+                <span className="price">{money(f.price)}</span>
+              </Link>
+            ))}
+          </div>
         </section>
       )}
 
@@ -435,12 +458,45 @@ function OptionsSheet({ product, onClose, onAdd }: { product: Product; onClose: 
   );
 }
 
+/** Tarjeta de sellos del estudiante en un local. */
+function LoyaltyCard({ card }: { card: Loyalty }) {
+  return (
+    <section className="loyalty" aria-label="Tarjeta de sellos">
+      <div className="loyalty-head">
+        <strong>{card.rewards > 0 ? `¡Tienes ${card.rewards === 1 ? 'un premio' : `${card.rewards} premios`}!` : 'Tarjeta de sellos'}</strong>
+        <span>
+          {card.rewards > 0
+            ? `Úsalo en tu próximo pedido: un producto gratis hasta ${money(card.max)}.`
+            : `Cada ${card.every} pedidos, un producto gratis hasta ${money(card.max)}.`}
+        </span>
+      </div>
+      <ol className="stamps" aria-label={`${card.stamps} de ${card.every} sellos`}>
+        {Array.from({ length: card.every }, (_, i) => (
+          <li key={i} className={i < card.stamps ? 'on' : ''}>
+            {i < card.stamps && <Check size={14} strokeWidth={3} />}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 export function ShopPage() {
   const { id } = useParams();
   const { cart, cartCount, cartTotal, addToCart, setQty } = useApp();
-  const { data, error, reload } = useLoad(() => api<{ shop: Shop; products: Product[] }>(`/shops/${id}`), [id]);
+  const { data, error, reload } = useLoad(() => api<{ shop: Shop; products: Product[]; loyalty: Loyalty | null }>(`/shops/${id}`), [id]);
   const [category, setCategory] = useState<string | null>(null);
   const [choosing, setChoosing] = useState<Product | null>(null);
+  const favs = useLoad(() => api<Product[]>('/favorites'), []);
+  const favIds = new Set((favs.data ?? []).map((f) => f.id));
+  const toggleFav = async (p: Product) => {
+    try {
+      await api(`/favorites/${p.id}`, favIds.has(p.id) ? 'DELETE' : 'POST');
+    } catch {
+      /* sin conexión: se reintenta al volver */
+    }
+    favs.reload();
+  };
   useTick();
 
   const categories = useMemo(() => [...new Set((data?.products ?? []).map((p) => p.category))], [data]);
@@ -509,6 +565,14 @@ export function ShopPage() {
         </p>
       )}
 
+      {shop.promos.length > 0 && !shop.paused && (
+        <section className="promo-strip" aria-label="Promociones">
+          <Percent size={18} aria-hidden />
+          <span>{shop.promos.map(promoText).join(' · ')}</span>
+        </section>
+      )}
+      {data.loyalty && <LoyaltyCard card={data.loyalty} />}
+
       {products.length === 0 && <p className="muted center">Este local todavía no publica su menú.</p>}
       {categories.length > 1 && (
         <div className="chips" role="tablist" aria-label="Categorías">
@@ -536,6 +600,14 @@ export function ShopPage() {
                     {money(p.price)}
                   </span>
                 </div>
+                <button
+                  className={`fav ${favIds.has(p.id) ? 'on' : ''}`}
+                  aria-pressed={favIds.has(p.id)}
+                  aria-label={favIds.has(p.id) ? `Quitar ${p.name} de favoritos` : `Guardar ${p.name} en favoritos`}
+                  onClick={() => toggleFav(p)}
+                >
+                  <Heart size={20} fill={favIds.has(p.id) ? 'currentColor' : 'none'} />
+                </button>
                 {!p.available ? (
                   <span className="tag tag-off">Agotado</span>
                 ) : qty > 0 && !hasOptions ? (
@@ -605,7 +677,13 @@ function SlotPicker({ slots, value, onChange }: { slots: Slot[]; value: string; 
               onClick={() => onChange(s.slot)}
             >
               {s.time}
-              {s.remaining === 0 ? <small>Lleno</small> : s.remaining <= 2 ? <small>Quedan {s.remaining}</small> : null}
+              {s.remaining === 0 ? (
+                <small>Lleno</small>
+              ) : s.promo ? (
+                <small className="promo">−{s.promo} %</small>
+              ) : s.remaining <= 2 ? (
+                <small>Quedan {s.remaining}</small>
+              ) : null}
             </button>
           ))}
         </div>
@@ -627,7 +705,12 @@ export function Checkout() {
   const { user, cart, cartTotal, setQty, clearCart } = useApp();
   const navigate = useNavigate();
   const shopId = cart.shopId;
-  const slots = useLoad(() => (shopId ? api<Slot[]>(`/shops/${shopId}/slots`) : Promise.resolve([])), [shopId]);
+  // La anticipación depende de lo que hay en el carrito (cada producto puede necesitar más tiempo).
+  const productKey = [...new Set(cart.lines.map((l) => l.productId))].sort((a, b) => a - b).join(',');
+  const slots = useLoad(
+    () => (shopId ? api<Slot[]>(`/shops/${shopId}/slots?products=${productKey}`) : Promise.resolve([])),
+    [shopId, productKey],
+  );
   const { payments, demo } = useApp();
   const [reviewing, setReviewing] = useState(false);
   const shopInfo = useLoad(() => (shopId ? api<{ shop: Shop }>(`/shops/${shopId}`) : Promise.resolve(null)), [shopId]);
@@ -638,6 +721,34 @@ export function Checkout() {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [useReward, setUseReward] = useState(false);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  // El precio final (promociones y premio) lo calcula el servidor; aquí solo se muestra.
+  const itemsKey = JSON.stringify(cart.lines.map((l) => [l.productId, l.qty, l.choices]));
+  useEffect(() => {
+    if (!shopId || cart.lines.length === 0) return;
+    let alive = true;
+    const t = setTimeout(() => {
+      api<Quote>('/orders/quote', 'POST', {
+        shopId,
+        slot,
+        useReward,
+        items: cart.lines.map((l) => ({ productId: l.productId, qty: l.qty, choices: l.choices })),
+      })
+        .then((q) => alive && setQuote(q))
+        .catch(() => {
+          if (!alive) return;
+          setQuote(null);
+          if (useReward) setUseReward(false);
+        });
+    }, 150);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shopId, slot, useReward, itemsKey]);
+  const total = quote?.total ?? cartTotal;
 
   // Por defecto se propone la primera hora con cupo: el camino rápido es confirmar y listo.
   useEffect(() => {
@@ -667,6 +778,7 @@ export function Checkout() {
         slot,
         note,
         paymentMethod: payMethod,
+        useReward,
         items: cart.lines.map((l) => ({ productId: l.productId, qty: l.qty, choices: l.choices })),
       });
       clearCart();
@@ -722,6 +834,46 @@ export function Checkout() {
         )}
       </div>
 
+      {quote?.loyalty && quote.loyalty.rewards > 0 && (
+        <button className={`reward-toggle ${useReward ? 'on' : ''}`} role="switch" aria-checked={useReward} onClick={() => setUseReward(!useReward)}>
+          <Gift size={22} aria-hidden />
+          <span className="grow">
+            <strong>{useReward ? 'Premio aplicado' : 'Usar mi premio'}</strong>
+            <small>Un producto gratis hasta {money(quote.loyalty.max)}</small>
+          </span>
+          <span className="radio" aria-hidden>
+            {useReward && <Check size={14} strokeWidth={3} />}
+          </span>
+        </button>
+      )}
+
+      {quote && (quote.promo_discount > 0 || quote.reward_discount > 0) && (
+        <section className="card">
+          <ul className="lines">
+            <li>
+              <span>Subtotal</span>
+              <span>{money(quote.subtotal)}</span>
+            </li>
+            {quote.reward_discount > 0 && (
+              <li className="saving">
+                <span>Premio de la tarjeta de sellos</span>
+                <span>−{money(quote.reward_discount)}</span>
+              </li>
+            )}
+            {quote.promo_discount > 0 && (
+              <li className="saving">
+                <span>Promoción {quote.promo_percent} % por tu hora de retiro</span>
+                <span>−{money(quote.promo_discount)}</span>
+              </li>
+            )}
+            <li className="lines-total">
+              <span>Total</span>
+              <span>{money(quote.total)}</span>
+            </li>
+          </ul>
+        </section>
+      )}
+
       <StepTitle n={3}>Pago</StepTitle>
       {payments ? (
         <div className="options" role="radiogroup" aria-label="Cómo pagas">
@@ -759,7 +911,7 @@ export function Checkout() {
           </span>
           <div className="grow">
             <strong>Pagas en el local al retirar</strong>
-            <p className="muted">Al retirar pagas {money(cartTotal)} con el medio que acepte el local.</p>
+            <p className="muted">Al retirar pagas {money(total)} con el medio que acepte el local.</p>
           </div>
         </section>
       )}
@@ -778,7 +930,7 @@ export function Checkout() {
       <div className="paybar">
         <div>
           <span>{slot ? `Retiro ${slotLabel(slot).toLowerCase()}` : 'Elige una hora de retiro'}</span>
-          <strong>{money(cartTotal)}</strong>
+          <strong>{money(total)}</strong>
         </div>
         <button
           className="btn btn-primary"
@@ -804,9 +956,15 @@ export function Checkout() {
               <span>Productos</span>
               <strong>{cart.lines.reduce((n, l) => n + l.qty, 0)}</strong>
             </div>
+            {quote && quote.subtotal !== quote.total && (
+              <div>
+                <span>Descuentos</span>
+                <strong>−{money(quote.subtotal - quote.total)}</strong>
+              </div>
+            )}
             <div className="review-total">
               <span>Total a pagar</span>
-              <strong>{money(cartTotal)}</strong>
+              <strong>{money(total)}</strong>
             </div>
           </section>
 
@@ -847,7 +1005,7 @@ export function Checkout() {
             </p>
           )}
           <button className="btn btn-primary btn-block" disabled={busy} onClick={confirm}>
-            {busy ? 'Abriendo el pago…' : payments === 'simulado' ? `Ir al pago de prueba · ${money(cartTotal)}` : `Pagar ${money(cartTotal)} con Mercado Pago`}
+            {busy ? 'Abriendo el pago…' : payments === 'simulado' ? `Ir al pago de prueba · ${money(total)}` : `Pagar ${money(total)} con Mercado Pago`}
           </button>
           <p className="muted small center">
             Al pagar aceptas las <Link to="/condiciones">Condiciones de uso</Link>.
@@ -1145,6 +1303,18 @@ export function OrderDetail() {
               <span>{money(i.price * i.qty)}</span>
             </li>
           ))}
+          {o.reward_discount > 0 && (
+            <li className="saving">
+              <span>Premio de la tarjeta de sellos</span>
+              <span>−{money(o.reward_discount)}</span>
+            </li>
+          )}
+          {o.promo_discount > 0 && (
+            <li className="saving">
+              <span>Promoción por hora de retiro</span>
+              <span>−{money(o.promo_discount)}</span>
+            </li>
+          )}
           <li className="lines-total">
             <span>Total</span>
             <span>{money(o.total)}</span>

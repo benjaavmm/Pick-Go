@@ -25,6 +25,7 @@ Así no pierdes en la fila los 10 minutos que tienes para comer.
   estudiante cancela a tiempo, el dinero se devuelve solo. Cada local decide si también acepta pagar al retirar.
 - Seguimiento en vivo y aviso cuando el pedido está listo, también con la app cerrada.
 - Código de retiro con QR, historial, «pedir lo de siempre» y calificación del local.
+- Promociones por hora de retiro, tarjeta de sellos con premio y favoritos.
 - Perfil con cambio de sede, apariencia clara u oscura, ayuda, descarga de datos y eliminación de cuenta.
 
 **Locales**
@@ -36,6 +37,10 @@ Así no pierdes en la fila los 10 minutos que tienes para comer.
   aceptación automática.
 - Tablero pensado para una tablet en el mostrador: la pantalla no se apaga y la alerta suena hasta aceptar.
 - Días de atención por local, impresión de comandas y descarga de pedidos en CSV.
+- Panel «Lo que ganaste con Pick&Go»: ventas por la app, pedidos en horas peak, fila evitada (estimada),
+  clientes nuevos y recurrentes, y pedidos no retirados que igual se cobraron.
+- Promociones en horas tranquilas, tarjeta de sellos, tiempo de preparación por producto e impresión automática de
+  la comanda al aceptar.
 - Menú editable con foto, ícono y opciones por producto (todos opcionales), horarios, cupo por franja,
   anticipación mínima y pausa de pedidos.
 - Métricas: ventas, puntualidad, calificación, demanda por hora, productos más pedidos y opiniones.

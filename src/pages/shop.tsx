@@ -5,6 +5,7 @@ import {
   ClipboardList,
   Hourglass,
   FileDown,
+  Gift,
   Pause,
   Pencil,
   Play,
@@ -36,6 +37,8 @@ import {
   type Order,
   type Product,
   type Shop,
+  type Impact,
+  type Promo,
   type ShopPayouts,
   type ShopStats,
   percent,
@@ -326,6 +329,7 @@ function OrderCard({
         ))}
       </ul>
       {o.note && <p className="note">{o.note}</p>}
+      {o.reward_discount > 0 && <p className="paid">Incluye premio de la tarjeta de sellos</p>}
       <p className={o.paid ? 'paid' : 'collect'}>
         {o.payment_method === 'app' ? 'Pagado en la app' : o.paid ? 'Pagado' : `Cobrar ${money(o.total)} al entregar`}
       </p>
@@ -391,7 +395,25 @@ export function ShopOrders() {
   }, [sound, waiting]);
 
   const [rejecting, setRejecting] = useState<Order | null>(null);
+  const [autoPrint, setAutoPrint] = useState(() => {
+    try {
+      return localStorage.getItem('pickgo.autoprint') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleAutoPrint = () => {
+    const v = !autoPrint;
+    setAutoPrint(v);
+    try {
+      localStorage.setItem('pickgo.autoprint', v ? '1' : '0');
+    } catch {
+      /* almacenamiento no disponible */
+    }
+  };
   const move = async (o: Order, to: Status, reason?: string) => {
+    // Con impresión automática, la comanda sale al aceptar el pedido.
+    if (autoPrint && to === 'preparando') printOrder(o.id);
     try {
       await api(`/shop/orders/${o.id}/status`, 'POST', { status: to, reason });
       if (to === 'listo') toast(`Avisamos a ${o.customer_name} que su pedido está listo`, 'ok');
@@ -431,6 +453,11 @@ export function ShopOrders() {
 
   return (
     <main className="panel-body">
+      <label className="switch print-toggle">
+        <input type="checkbox" role="switch" checked={autoPrint} onChange={toggleAutoPrint} />
+        <span aria-hidden />
+        <Printer size={16} aria-hidden /> Imprimir la comanda al aceptar cada pedido
+      </label>
       <section className="panel-top">
         <form className="pickup-form" onSubmit={pickup}>
           <label htmlFor="pickup-code">Entregar por código</label>
@@ -548,10 +575,90 @@ export function hourBars(byHour: { hour: number; orders: number }[]) {
   return byHour.map((h) => ({ label: `${h.hour}h`, value: h.orders, highlight: max > 0 && h.orders >= max * 0.8 }));
 }
 
+function change(now: number, before: number) {
+  if (before === 0) return null;
+  const pct = Math.round(((now - before) / before) * 100);
+  return { pct, text: `${pct > 0 ? '+' : ''}${pct} % vs. período anterior` };
+}
+
+/** Lo que Pick&Go le generó al local: el resumen para el dueño. */
+function ImpactPanel({ i }: { i: Impact }) {
+  const sales = change(i.sales, i.previous.sales);
+  const peak = i.peak_hours.length ? i.peak_hours.map((h) => `${h}:00`).join(', ') : null;
+  const hours = Math.floor(i.queue_minutes_saved / 60);
+  const minutes = i.queue_minutes_saved % 60;
+  if (i.delivered === 0 && i.no_show_paid === 0)
+    return (
+      <section className="impact">
+        <h2>Lo que ganaste con Pick&amp;Go</h2>
+        <p className="impact-note">Cuando entregues tus primeros pedidos, aquí verás cuánto vendiste por la app y cuánta fila te ahorraste.</p>
+      </section>
+    );
+  return (
+    <section className="impact">
+      <h2>Lo que ganaste con Pick&amp;Go</h2>
+      <div className="impact-grid">
+        <div className="impact-item">
+          <span>Vendiste por la app</span>
+          <b>{moneyShort(i.sales)}</b>
+          <span>
+            {i.delivered} pedidos entregados
+            {sales && <> · <em className={sales.pct >= 0 ? 'up' : 'down'}>{sales.text}</em></>}
+          </span>
+        </div>
+        {peak && (
+          <div className="impact-item">
+            <span>Pedidos en tus horas peak</span>
+            <b>{i.peak_orders}</b>
+            <span>A las {peak}, sin sumar gente a la fila</span>
+          </div>
+        )}
+        <div className="impact-item">
+          <span>Fila que te ahorraste</span>
+          <b>{hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`}</b>
+          <span>Estimado: {i.queue_minutes_per_order} min por pedido</span>
+        </div>
+        <div className="impact-item">
+          <span>Clientes</span>
+          <b>{i.customers}</b>
+          <span>
+            {i.new_customers} nuevos · {i.returning} volvieron más de una vez
+          </span>
+        </div>
+        {i.promo_orders > 0 && (
+          <div className="impact-item">
+            <span>Ventas con promoción</span>
+            <b>{moneyShort(i.promo_sales)}</b>
+            <span>
+              {i.promo_orders} pedidos en horas tranquilas · descuentos por {money(i.promo_given)}
+            </span>
+          </div>
+        )}
+        {i.no_show_paid > 0 && (
+          <div className="impact-item">
+            <span>No retirados, pero cobrados</span>
+            <b>{money(i.no_show_paid_amount)}</b>
+            <span>{i.no_show_paid} pedidos pagados en la app que no se perdieron</span>
+          </div>
+        )}
+        {i.rewards > 0 && (
+          <div className="impact-item">
+            <span>Premios de la tarjeta de sellos</span>
+            <b>{i.rewards}</b>
+            <span>Clientes que volvieron por su sello</span>
+          </div>
+        )}
+      </div>
+      <p className="impact-note">Últimos {i.days} días. Los minutos de fila son una estimación conservadora.</p>
+    </section>
+  );
+}
+
 export function ShopStatsPage() {
   const [days, setDays] = useState(7);
   const { data, error } = useLoad(() => api<ShopStats>(`/shop/stats?days=${days}`), [days]);
   const payouts = useLoad(() => api<ShopPayouts>('/shop/payouts'), []);
+  const impact = useLoad(() => api<Impact>(`/shop/impact?days=${days}`), [days]);
   if (error) return <main className="panel-body narrow"><p className="error">{error}</p></main>;
   if (!data) return <main className="panel-body narrow"><Loading /></main>;
   const t = data.totals;
@@ -574,6 +681,8 @@ export function ShopStatsPage() {
         <Kpi label="A tiempo" value={t.on_time_pct === null ? '—' : `${t.on_time_pct}%`} hint="Listos a la hora de retiro" />
         <Kpi label="Calificación" value={t.rating === null ? '—' : t.rating.toFixed(1)} hint={`${t.ratings} ${t.ratings === 1 ? 'opinión' : 'opiniones'}`} />
       </div>
+      {impact.data && <ImpactPanel i={impact.data} />}
+
       {p?.enabled && (
         <section className="card stack">
           <div className="panel-title">
@@ -668,8 +777,9 @@ interface ProductForm {
   image: string | null;
   imageId: number | null;
   options: OptionGroup[];
+  prepMinutes: string;
 }
-const BLANK: ProductForm = { category: '', name: '', description: '', price: '', emoji: '', image: null, imageId: null, options: [] };
+const BLANK: ProductForm = { category: '', name: '', description: '', price: '', emoji: '', image: null, imageId: null, options: [], prepMinutes: '' };
 
 /** Reduce la foto en el propio dispositivo antes de subirla: carga rápida con datos móviles y menos espacio. */
 async function uploadPhoto(file: File): Promise<{ id: number; url: string }> {
@@ -813,6 +923,7 @@ export function ShopMenu() {
       emoji: form.emoji,
       imageId: form.imageId,
       options: form.options,
+      prepMinutes: Number(form.prepMinutes || 0),
     };
     void run(async () => {
       await (form.id ? api(`/shop/products/${form.id}`, 'PATCH', body) : api('/shop/products', 'POST', body));
@@ -885,6 +996,7 @@ export function ShopMenu() {
                             image: p.image,
                             imageId: p.image ? Number(p.image.split('/').pop()) : null,
                             options: p.options,
+                            prepMinutes: p.prep_minutes ? String(p.prep_minutes) : '',
                           })
                         }
                       >
@@ -973,6 +1085,21 @@ export function ShopMenu() {
               </span>
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} maxLength={120} />
             </label>
+            <label>
+              <span>
+                Tiempo de preparación (min) <span className="optional">(opcional)</span>
+              </span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={240}
+                value={form.prepMinutes}
+                onChange={(e) => setForm({ ...form, prepMinutes: e.target.value })}
+                placeholder="El del local"
+              />
+              <small>Si este producto tarda más que el resto, la app solo ofrecerá horas que alcances a cumplir.</small>
+            </label>
             <div className="stack">
               <strong>Opciones</strong>
               <span className="muted small">Tamaños, agregados o variantes que el estudiante elige al pedir. Cada alternativa puede sumar un valor al precio.</span>
@@ -990,6 +1117,98 @@ export function ShopMenu() {
 
 // ---------- Ajustes ----------
 const WEEK: [string, string][] = [['1', 'Lun'], ['2', 'Mar'], ['3', 'Mié'], ['4', 'Jue'], ['5', 'Vie'], ['6', 'Sáb'], ['0', 'Dom']];
+
+/** Descuentos para repartir la demanda hacia horas tranquilas. */
+function PromosEditor({ shop, onSave }: { shop: Shop; onSave: (p: Promo[]) => void }) {
+  const [rows, setRows] = useState(shop.promos.map((p) => ({ from: hhmm(p.from), to: hhmm(p.to), percent: String(p.percent) })));
+  const set = (i: number, k: 'from' | 'to' | 'percent', v: string) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  return (
+    <form
+      className="card form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(rows.map((r) => ({ from: toMinutes(r.from), to: toMinutes(r.to), percent: Number(r.percent) })));
+      }}
+    >
+      <h2>Promociones en horas tranquilas</h2>
+      <p className="muted">
+        Un descuento para quienes retiren en horas de poca venta. Mueve pedidos fuera del horario peak y te vende más en
+        horas muertas. Los estudiantes lo ven en tu menú y al elegir la hora.
+      </p>
+      <div className="promo-editor">
+        {rows.map((r, i) => (
+          <div key={i} className="promo-row">
+            <label>
+              Desde
+              <input type="time" value={r.from} onChange={(e) => set(i, 'from', e.target.value)} required />
+            </label>
+            <label>
+              Hasta
+              <input type="time" value={r.to} onChange={(e) => set(i, 'to', e.target.value)} required />
+            </label>
+            <label>
+              % menos
+              <input type="number" inputMode="numeric" min={1} max={50} value={r.percent} onChange={(e) => set(i, 'percent', e.target.value)} required />
+            </label>
+            <button type="button" className="icon-btn danger" aria-label="Quitar promoción" onClick={() => setRows(rows.filter((_, j) => j !== i))}>
+              <Trash2 size={18} />
+            </button>
+          </div>
+        ))}
+      </div>
+      {rows.length < 6 && (
+        <button type="button" className="btn btn-soft" onClick={() => setRows([...rows, { from: '15:00', to: '16:00', percent: '10' }])}>
+          <Plus size={18} aria-hidden /> Agregar promoción
+        </button>
+      )}
+      <button className="btn btn-primary btn-block">Guardar promociones</button>
+    </form>
+  );
+}
+
+/** Tarjeta de sellos: cada N pedidos entregados, un producto gratis. */
+function LoyaltyEditor({ shop, onSave }: { shop: Shop; onSave: (every: number, max: number) => void }) {
+  const [on, setOn] = useState(shop.loyalty_every > 0);
+  const [every, setEvery] = useState(String(shop.loyalty_every || 6));
+  const [max, setMax] = useState(String(shop.loyalty_max || 2500));
+  return (
+    <form
+      className="card form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(on ? Number(every) : 0, on ? Number(max) : 0);
+      }}
+    >
+      <div className="setting">
+        <span className="setting-icon" aria-hidden>
+          <Gift size={20} />
+        </span>
+        <div className="grow">
+          <strong>Tarjeta de sellos</strong>
+          <p className="muted">Cada pedido entregado suma un sello. Al completar la tarjeta, el estudiante gana un producto gratis.</p>
+        </div>
+        <label className="switch">
+          <input type="checkbox" role="switch" checked={on} aria-label="Activar tarjeta de sellos" onChange={() => setOn(!on)} />
+          <span aria-hidden />
+        </label>
+      </div>
+      {on && (
+        <div className="form-row">
+          <label className="grow">
+            Pedidos para un premio
+            <input type="number" inputMode="numeric" min={2} max={30} value={every} onChange={(e) => setEvery(e.target.value)} required />
+          </label>
+          <label className="grow">
+            Valor máximo del regalo ($)
+            <input type="number" inputMode="numeric" min={1} max={100000} value={max} onChange={(e) => setMax(e.target.value)} required />
+            <small>Se regala el producto más caro del pedido, hasta este valor.</small>
+          </label>
+        </div>
+      )}
+      <button className="btn btn-primary btn-block">Guardar tarjeta de sellos</button>
+    </form>
+  );
+}
 
 export function ShopSettings() {
   const { toast, payments } = useApp();
@@ -1124,6 +1343,12 @@ export function ShopSettings() {
           <span aria-hidden />
         </label>
       </section>
+
+      <PromosEditor shop={shop} onSave={(promos) => patch({ promos }, 'Promociones guardadas')} />
+      <LoyaltyEditor
+        shop={shop}
+        onSave={(every, max) => patch({ loyalty_every: every, loyalty_max: max }, every ? 'Tarjeta de sellos activada' : 'Tarjeta de sellos desactivada')}
+      />
 
       <form className="card form" onSubmit={save}>
         <h2>Horarios de retiro</h2>

@@ -481,6 +481,7 @@ test('una base de la versión 3 se actualiza sin perder datos', () => {
   const old = new DatabaseSync(file);
   old.exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);
             CREATE TABLE shops (id INTEGER PRIMARY KEY, name TEXT NOT NULL, paused INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT);
             CREATE TABLE orders (id INTEGER PRIMARY KEY, total INTEGER);
             INSERT INTO orders (total) VALUES (4500);
             INSERT INTO shops (name, paused) VALUES ('Kiosko antiguo', 1);
@@ -490,7 +491,7 @@ test('una base de la versión 3 se actualiza sin perder datos', () => {
   assert.equal(migrated.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION);
   const row = migrated.prepare('SELECT name, paused, auto_accept, days FROM shops').get();
   assert.deepEqual({ ...row }, { name: 'Kiosko antiguo', paused: 1, auto_accept: 0, days: '0123456' });
-  assert.deepEqual({ ...migrated.prepare('SELECT total, cancel_reason FROM orders').get() }, { total: 4500, cancel_reason: '' });
+  assert.deepEqual({ ...migrated.prepare('SELECT total, cancel_reason, subtotal FROM orders').get() }, { total: 4500, cancel_reason: '', subtotal: 4500 });
   assert.equal(migrated.prepare('SELECT COUNT(*) AS c FROM password_resets').get().c, 0);
   migrated.close();
   // Una base anterior a la primera versión migrable no se toca: se rechaza para apartarla.
@@ -586,4 +587,85 @@ test('el local no ve el código de retiro y tiene un tope de intentos por pedido
   const done = (await shopUser('POST', '/api/shop/pickup', { code: o.code })).body;
   assert.equal(done.status, 'entregado');
   assert.equal(done.code, o.code);
+});
+
+test('promociones por horario, tarjeta de sellos y precio calculado por el servidor', async () => {
+  const shopUser = await login('pepepug@pickgo.cl');
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Pepepug'").get();
+  const papas = productOf(shop.id, 'Papas fritas'); // $2.000
+  const empanada = productOf(shop.id, 'Empanada de queso'); // $1.500
+  // Validaciones: traslapes, porcentajes fuera de rango y premios sin valor.
+  assert.equal((await shopUser('PATCH', '/api/shop/me', { promos: [{ from: 900, to: 960, percent: 10 }, { from: 930, to: 1000, percent: 5 }] })).status, 400);
+  assert.equal((await shopUser('PATCH', '/api/shop/me', { promos: [{ from: 900, to: 960, percent: 80 }] })).status, 400);
+  assert.equal((await shopUser('PATCH', '/api/shop/me', { loyalty_every: 3, loyalty_max: 0 })).status, 400);
+  let r = await shopUser('PATCH', '/api/shop/me', { promos: [{ from: 900, to: 960, percent: 10 }], loyalty_every: 3, loyalty_max: 1500 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.promos, [{ from: 900, to: 960, percent: 10 }]);
+
+  const campus = db.prepare('SELECT id FROM campuses LIMIT 1').get().id;
+  const st = client();
+  await st('POST', '/api/auth/register', { name: 'Fiel', email: 'fiel@duocuc.cl', password: 'clave-segura', campusId: campus });
+  const slots = (await st('GET', `/api/shops/${shop.id}/slots`)).body;
+  assert.equal(slots.find((s) => s.slot === '2026-11-13T15:00').promo, 10);
+  assert.equal(slots.find((s) => s.slot === '2026-11-13T16:00').promo, undefined);
+
+  // Con promoción: 10 % menos, calculado en el servidor aunque el navegador mande otro precio.
+  const items = [{ productId: papas.id, qty: 2, price: 1 }];
+  let q = (await st('POST', '/api/orders/quote', { shopId: shop.id, slot: '2026-11-13T15:00', items })).body;
+  assert.deepEqual([q.subtotal, q.promo_discount, q.total], [4000, 400, 3600]);
+  const o1 = (await st('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T15:00', items })).body;
+  assert.deepEqual([o1.subtotal, o1.promo_discount, o1.total], [4000, 400, 3600]);
+  assert.equal((await st('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T16:00', items, useReward: true })).status, 409);
+
+  // Tres pedidos entregados = un premio.
+  const deliver = async (o) => shopUser('POST', '/api/shop/pickup', { code: o.code, orderId: o.id });
+  await deliver(o1);
+  for (const slot of ['2026-11-13T16:10', '2026-11-13T16:20']) {
+    const o = (await st('POST', '/api/orders', { shopId: shop.id, slot, items: [{ productId: empanada.id, qty: 1 }] })).body;
+    await deliver(o);
+  }
+  q = (await st('POST', '/api/orders/quote', { shopId: shop.id, slot: '2026-11-13T16:30', items: [{ productId: papas.id, qty: 1 }, { productId: empanada.id, qty: 1 }] })).body;
+  assert.deepEqual(q.loyalty, { every: 3, max: 1500, stamps: 0, rewards: 1 });
+  // El premio cubre el producto más caro hasta el tope ($1.500 de las papas de $2.000).
+  const withReward = { shopId: shop.id, slot: '2026-11-13T16:30', items: [{ productId: papas.id, qty: 1 }, { productId: empanada.id, qty: 1 }], useReward: true };
+  const o4 = (await st('POST', '/api/orders', withReward)).body;
+  assert.deepEqual([o4.subtotal, o4.reward_discount, o4.total], [3500, 1500, 2000]);
+  // El premio ya está ocupado por un pedido en curso: no se puede usar dos veces.
+  assert.equal((await st('POST', '/api/orders', { ...withReward, slot: '2026-11-13T16:40' })).status, 409);
+  // Si ese pedido se cancela, el premio vuelve.
+  await st('POST', `/api/orders/${o4.id}/cancel`);
+  assert.equal((await st('POST', '/api/orders/quote', withReward)).body.loyalty.rewards, 1);
+
+  // Impacto para el local.
+  const impact = (await shopUser('GET', '/api/shop/impact')).body;
+  assert.equal(impact.delivered >= 3, true);
+  assert.equal(impact.promo_orders >= 1, true);
+  assert.equal(impact.queue_minutes_saved, impact.delivered * impact.queue_minutes_per_order);
+  assert.equal((await st('GET', '/api/shop/impact')).status, 403);
+  await shopUser('PATCH', '/api/shop/me', { promos: [], loyalty_every: 0 });
+});
+
+test('tiempo de preparación por producto y favoritos', async () => {
+  const shopUser = await login('casino@pickgo.cl');
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Casino'").get();
+  const menu = productOf(shop.id, 'Menú del día');
+  const fruta = productOf(shop.id, 'Fruta de estación');
+  // El menú necesita 45 minutos: con él en el carrito, la primera hora es más tarde.
+  assert.equal((await shopUser('PATCH', `/api/shop/products/${menu.id}`, { prepMinutes: 45 })).body.prep_minutes, 45);
+  const st = await login('estudiante@pickgo.cl');
+  const fast = (await st('GET', `/api/shops/${shop.id}/slots?products=${fruta.id}`)).body[0].slot;
+  const slow = (await st('GET', `/api/shops/${shop.id}/slots?products=${fruta.id},${menu.id}`)).body[0].slot;
+  assert.equal(fast, '2026-11-13T12:20'); // 12:00 + 15 min del local
+  assert.equal(slow, '2026-11-13T12:50'); // 12:00 + 45 min del menú
+  const r = await st('POST', '/api/orders', { shopId: shop.id, slot: fast, items: [{ productId: menu.id, qty: 1 }] });
+  assert.equal(r.status, 409);
+  await shopUser('PATCH', `/api/shop/products/${menu.id}`, { prepMinutes: 0 });
+
+  assert.equal((await st('POST', `/api/favorites/${fruta.id}`)).status, 200);
+  assert.equal((await st('POST', `/api/favorites/${fruta.id}`)).status, 200);
+  let fav = (await st('GET', '/api/favorites')).body;
+  assert.deepEqual(fav.map((f) => [f.name, f.shop_name]), [['Fruta de estación', 'Casino']]);
+  assert.equal((await st('POST', '/api/favorites/999999')).status, 404);
+  await st('DELETE', `/api/favorites/${fruta.id}`);
+  assert.equal((await st('GET', '/api/favorites')).body.length, 0);
 });

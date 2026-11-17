@@ -15,7 +15,7 @@ import {
   verifyPassword,
 } from './auth.js';
 import { CHECKOUT_MINUTES } from './payments.js';
-import { addDays, buildSlots, chileNow, chileStamp, isOpenNow } from './time.js';
+import { addDays, buildSlots, chileNow, chileStamp, isOpenNow, toMinutes } from './time.js';
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -236,6 +236,7 @@ export function createApp(
     emoji: p.emoji,
     image: p.image_id ? `/api/images/${p.image_id}` : null,
     options: parseJson(p.options),
+    prep_minutes: p.prep_minutes ?? 0,
     available: !!p.available,
   });
 
@@ -280,6 +281,7 @@ export function createApp(
       auto_accept: !!s.auto_accept,
       // Sin cobro en la app, todos los pedidos se pagan en el local.
       pay_at_shop: payments ? !!s.pay_at_shop : true,
+      promos: parseJson(s.promos),
       is_open: isOpenNow(s, now()),
       next_slot: next ? { slot: next.slot, day: next.day, time: next.time } : null,
       rating: r.n ? Math.round(r.avg * 10) / 10 : null,
@@ -757,12 +759,159 @@ export function createApp(
       .prepare('SELECT * FROM products WHERE shop_id = ? AND deleted = 0 ORDER BY id')
       .all(shop.id)
       .map(productRow);
-    res.json({ shop: shopOut(shop), products });
+    res.json({ shop: shopOut(shop), products, loyalty: req.user.role === 'student' ? loyaltyFor(shop, req.user.id) : null });
   });
 
   app.get('/api/shops/:id/slots', auth, (req, res) => {
     const shop = visibleShop(req, Number(req.params.id));
-    res.json(shop.status === 'activo' ? buildSlots(shop, now(), slotCounts(shop.id)) : []);
+    if (shop.status !== 'activo') return res.json([]);
+    const ids = String(req.query.products ?? '')
+      .split(',')
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0)
+      .slice(0, 30);
+    res.json(slotsFor(shop, ids));
+  });
+
+  /** Anticipación del pedido: la mayor entre la del local y la de cada producto del carrito. */
+  const leadFor = (shop, productIds) => {
+    if (productIds.length === 0) return shop.prep_minutes;
+    const marks = productIds.map(() => '?').join(',');
+    const r = db
+      .prepare(`SELECT MAX(prep_minutes) AS m FROM products WHERE shop_id = ? AND id IN (${marks})`)
+      .get(shop.id, ...productIds);
+    return Math.max(shop.prep_minutes, r?.m ?? 0);
+  };
+  /** Promoción vigente para una hora de retiro (minutos desde medianoche): el mayor descuento que la cubra. */
+  const promoFor = (shop, minutes) =>
+    parseJson(shop.promos)
+      .filter((p) => minutes >= p.from && minutes < p.to)
+      .reduce((best, p) => (p.percent > (best?.percent ?? 0) ? p : best), null);
+  const slotsFor = (shop, productIds) =>
+    buildSlots({ ...shop, prep_minutes: leadFor(shop, productIds) }, now(), slotCounts(shop.id)).map((s) => {
+      const promo = promoFor(shop, toMinutes(s.time));
+      return promo ? { ...s, promo: promo.percent } : s;
+    });
+
+  // ---------- tarjeta de sellos ----------
+  // Cada pedido entregado suma un sello; cada `loyalty_every` sellos se gana un producto de regalo
+  // (hasta `loyalty_max`). Se calcula desde los pedidos, así que no hay saldo que se pueda alterar.
+  const loyaltyFor = (shop, userId) => {
+    if (!shop.loyalty_every) return null;
+    const r = db
+      .prepare(
+        `SELECT COALESCE(SUM(status = 'entregado'), 0) AS stamps,
+                COALESCE(SUM(reward_discount > 0 AND status NOT IN ('cancelado')), 0) AS used
+         FROM orders WHERE shop_id = ? AND user_id = ?`,
+      )
+      .get(shop.id, userId);
+    const earned = Math.floor(r.stamps / shop.loyalty_every);
+    return {
+      every: shop.loyalty_every,
+      max: shop.loyalty_max,
+      stamps: r.stamps % shop.loyalty_every,
+      rewards: Math.max(0, earned - r.used),
+    };
+  };
+
+  /**
+   * Precio de un pedido, calculado solo con datos de la base: productos y opciones del menú actual,
+   * promoción de la hora de retiro y premio de la tarjeta de sellos.
+   */
+  const priceOrder = (shop, b, userId) => {
+    if (!Array.isArray(b.items) || b.items.length === 0) fail(400, 'Tu carrito está vacío.');
+    if (b.items.length > 30) fail(400, 'El pedido tiene demasiados productos distintos.');
+    const seen = new Set();
+    const lines = b.items.map((it) => {
+      const qty = int(it?.qty, 1, 20, 'La cantidad');
+      const p = db
+        .prepare('SELECT * FROM products WHERE id = ? AND shop_id = ? AND deleted = 0')
+        .get(Number(it?.productId), shop.id);
+      if (!p) fail(409, 'Un producto de tu carrito ya no existe. Revisa el menú.');
+      if (!p.available) fail(409, `"${p.name}" se agotó. Quítalo del carrito para continuar.`);
+      // Opciones elegidas: se validan contra el menú actual y su precio también sale de la base.
+      const wanted = new Set(Array.isArray(it?.choices) ? it.choices.slice(0, 40).map(String) : []);
+      const chosen = [];
+      for (const g of parseJson(p.options)) {
+        const picked = g.choices.filter((c) => wanted.has(c.id));
+        if (g.required && picked.length === 0) fail(409, `Elige ${g.name.toLowerCase()} para "${p.name}".`);
+        if (!g.multiple && picked.length > 1) fail(400, `Solo puedes elegir una opción de ${g.name.toLowerCase()} en "${p.name}".`);
+        for (const c of picked) {
+          wanted.delete(c.id);
+          chosen.push({ id: c.id, group: g.name, name: c.name, price: c.price });
+        }
+      }
+      if (wanted.size > 0) fail(409, `El menú de "${p.name}" cambió. Vuelve a agregarlo al carrito.`);
+      const key = `${p.id}:${chosen.map((c) => c.id).sort().join(',')}`;
+      if (seen.has(key)) fail(400, 'Hay un producto repetido en el pedido.');
+      seen.add(key);
+      return { p, qty, chosen, unit: p.price + chosen.reduce((n, c) => n + c.price, 0) };
+    });
+    const subtotal = lines.reduce((sum, l) => sum + l.unit * l.qty, 0);
+    // Premio: el producto más caro del pedido sale gratis, hasta el tope que definió el local.
+    let reward = 0;
+    if (b.useReward) {
+      const card = loyaltyFor(shop, userId);
+      if (!card || card.rewards < 1) fail(409, 'No tienes premios disponibles en este local.');
+      reward = Math.min(shop.loyalty_max, Math.max(...lines.map((l) => l.unit)));
+    }
+    const slotTime = typeof b.slot === 'string' && /T\d{2}:\d{2}$/.test(b.slot) ? toMinutes(b.slot.slice(11)) : null;
+    const promo = slotTime === null ? null : promoFor(shop, slotTime);
+    const promoDiscount = promo ? Math.round(((subtotal - reward) * promo.percent) / 100) : 0;
+    return {
+      lines,
+      subtotal,
+      reward_discount: reward,
+      promo_discount: promoDiscount,
+      promo_percent: promo?.percent ?? 0,
+      total: subtotal - reward - promoDiscount,
+      lead: leadFor(shop, lines.map((l) => l.p.id)),
+    };
+  };
+
+  // Vista previa del precio en el carrito: la misma cuenta que se usa al crear el pedido.
+  app.post('/api/orders/quote', student, (req, res) => {
+    const b = req.body ?? {};
+    const shop = getShop(int(b.shopId, 1, 1e9, 'El local'));
+    if (shop.status !== 'activo') fail(404, 'No encontramos ese local.');
+    const q = priceOrder(shop, b, req.user.id);
+    res.json({
+      subtotal: q.subtotal,
+      promo_discount: q.promo_discount,
+      promo_percent: q.promo_percent,
+      reward_discount: q.reward_discount,
+      total: q.total,
+      loyalty: loyaltyFor(shop, req.user.id),
+    });
+  });
+
+  // ---------- favoritos ----------
+  app.get('/api/favorites', student, (req, res) => {
+    const rows = db
+      .prepare(
+        `SELECT p.*, s.name AS shop_name FROM favorites f
+         JOIN products p ON p.id = f.product_id JOIN shops s ON s.id = p.shop_id
+         WHERE f.user_id = ? AND p.deleted = 0 AND s.status = 'activo' AND s.campus_id = ?
+         ORDER BY f.created_at DESC LIMIT 30`,
+      )
+      .all(req.user.id, req.user.campus_id ?? 0);
+    res.json(rows.map((r) => ({ ...productRow(r), shop_name: r.shop_name })));
+  });
+  app.post('/api/favorites/:productId', student, (req, res) => {
+    const p = db
+      .prepare(
+        "SELECT p.id FROM products p JOIN shops s ON s.id = p.shop_id WHERE p.id = ? AND p.deleted = 0 AND s.status = 'activo'",
+      )
+      .get(Number(req.params.productId));
+    if (!p) fail(404, 'No encontramos ese producto.');
+    const count = db.prepare('SELECT COUNT(*) AS c FROM favorites WHERE user_id = ?').get(req.user.id).c;
+    if (count >= 100) fail(409, 'Llegaste al máximo de favoritos.');
+    db.prepare('INSERT OR IGNORE INTO favorites (user_id, product_id, created_at) VALUES (?,?,?)').run(req.user.id, p.id, now().toISOString());
+    res.json({ ok: true });
+  });
+  app.delete('/api/favorites/:productId', student, (req, res) => {
+    db.prepare('DELETE FROM favorites WHERE user_id = ? AND product_id = ?').run(req.user.id, Number(req.params.productId));
+    res.json({ ok: true });
   });
 
   // Búsqueda de productos en los locales activos de una sede, sin distinguir tildes ni mayúsculas.
@@ -798,37 +947,9 @@ export function createApp(
     const method = payments ? (b.paymentMethod === 'local' ? 'local' : 'app') : 'local';
     if (method === 'local' && payments && !shop.pay_at_shop)
       fail(409, `${shop.name} solo recibe pedidos pagados en la app.`);
-    if (!Array.isArray(b.items) || b.items.length === 0) fail(400, 'Tu carrito está vacío.');
-    if (b.items.length > 30) fail(400, 'El pedido tiene demasiados productos distintos.');
-
-    // Los precios siempre se leen de la base: lo que mande el navegador no se usa para cobrar.
-    const seen = new Set();
-    const lines = b.items.map((it) => {
-      const qty = int(it?.qty, 1, 20, 'La cantidad');
-      const p = db
-        .prepare('SELECT * FROM products WHERE id = ? AND shop_id = ? AND deleted = 0')
-        .get(Number(it?.productId), shop.id);
-      if (!p) fail(409, 'Un producto de tu carrito ya no existe. Revisa el menú.');
-      if (!p.available) fail(409, `"${p.name}" se agotó. Quítalo del carrito para continuar.`);
-      // Opciones elegidas: se validan contra el menú actual y su precio también sale de la base.
-      const wanted = new Set(Array.isArray(it?.choices) ? it.choices.slice(0, 40).map(String) : []);
-      const chosen = [];
-      for (const g of parseJson(p.options)) {
-        const picked = g.choices.filter((c) => wanted.has(c.id));
-        if (g.required && picked.length === 0) fail(409, `Elige ${g.name.toLowerCase()} para "${p.name}".`);
-        if (!g.multiple && picked.length > 1) fail(400, `Solo puedes elegir una opción de ${g.name.toLowerCase()} en "${p.name}".`);
-        for (const c of picked) {
-          wanted.delete(c.id);
-          chosen.push({ id: c.id, group: g.name, name: c.name, price: c.price });
-        }
-      }
-      if (wanted.size > 0) fail(409, `El menú de "${p.name}" cambió. Vuelve a agregarlo al carrito.`);
-      const key = `${p.id}:${chosen.map((c) => c.id).sort().join(',')}`;
-      if (seen.has(key)) fail(400, 'Hay un producto repetido en el pedido.');
-      seen.add(key);
-      return { p, qty, chosen, unit: p.price + chosen.reduce((n, c) => n + c.price, 0) };
-    });
-    const total = lines.reduce((sum, l) => sum + l.unit * l.qty, 0);
+    // Los precios siempre se calculan aquí: lo que mande el navegador no se usa para cobrar.
+    const price = priceOrder(shop, b, req.user.id);
+    const { lines, total } = price;
 
     const active = db
       .prepare(`SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND (status IN ${ACTIVE} OR status = 'pago_pendiente')`)
@@ -840,14 +961,14 @@ export function createApp(
     let orderId;
     try {
       // El cupo se revisa dentro de la transacción para que dos pedidos no tomen el último lugar.
-      const slot = buildSlots(shop, now(), slotCounts(shop.id)).find((s) => s.slot === b.slot);
+      const slot = buildSlots({ ...shop, prep_minutes: price.lead }, now(), slotCounts(shop.id)).find((s) => s.slot === b.slot);
       if (!slot) fail(409, 'Esa hora de retiro ya no está disponible. Elige otra.');
       if (slot.remaining <= 0) fail(409, `El retiro de las ${slot.time} se llenó. Elige otra hora.`);
       const at = now().toISOString();
       orderId = db
         .prepare(
-          `INSERT INTO orders (code, user_id, shop_id, slot, status, payment_method, payment_status, paid, total, note, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO orders (code, user_id, shop_id, slot, status, payment_method, payment_status, paid, total, subtotal, promo_discount, reward_discount, note, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           newCode(),
@@ -859,6 +980,9 @@ export function createApp(
           method === 'app' ? 'pendiente' : '',
           0,
           total,
+          price.subtotal,
+          price.promo_discount,
+          price.reward_discount,
           note,
           at,
         ).lastInsertRowid;
@@ -1072,6 +1196,24 @@ export function createApp(
     res.json(shopOut(myShop(req)));
   });
 
+  /** Valida las promociones por horario: hasta 6, de 1 % a 50 %, sin traslaparse. */
+  const promosOf = (v) => {
+    if (!Array.isArray(v)) fail(400, 'Las promociones no son válidas.');
+    if (v.length > 6) fail(400, 'Puedes tener hasta 6 promociones.');
+    const list = v
+      .map((p) => ({
+        from: int(p?.from, 0, 1439, 'La hora de inicio de la promoción'),
+        to: int(p?.to, 1, 1440, 'La hora de término de la promoción'),
+        percent: int(p?.percent, 1, 50, 'El descuento de la promoción'),
+      }))
+      .sort((a, b) => a.from - b.from);
+    list.forEach((p, i) => {
+      if (p.to <= p.from) fail(400, 'Cada promoción debe terminar después de empezar.');
+      if (i > 0 && p.from < list[i - 1].to) fail(400, 'Hay promociones que se traslapan. Ajusta sus horarios.');
+    });
+    return list;
+  };
+
   const daysOfWeek = (v) => {
     const set = [...new Set(String(v))].filter((d) => /^[0-6]$/.test(d)).sort();
     if (set.length === 0) fail(400, 'Elige al menos un día de atención.');
@@ -1094,10 +1236,14 @@ export function createApp(
       auto_accept: b.auto_accept !== undefined ? (b.auto_accept ? 1 : 0) : s.auto_accept,
       days: b.days !== undefined ? daysOfWeek(b.days) : s.days,
       pay_at_shop: b.pay_at_shop !== undefined ? (b.pay_at_shop ? 1 : 0) : s.pay_at_shop,
+      promos: b.promos !== undefined ? JSON.stringify(promosOf(b.promos)) : s.promos,
+      loyalty_every: b.loyalty_every !== undefined ? (b.loyalty_every ? int(b.loyalty_every, 2, 30, 'Los sellos para un premio') : 0) : s.loyalty_every,
+      loyalty_max: b.loyalty_max !== undefined ? int(b.loyalty_max, 0, 100_000, 'El valor máximo del premio') : s.loyalty_max,
     };
     if (next.closes <= next.opens) fail(400, 'La hora de cierre debe ser posterior a la de apertura.');
+    if (next.loyalty_every && next.loyalty_max < 1) fail(400, 'Indica el valor máximo del producto de regalo.');
     db.prepare(
-      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?, pay_at_shop=?
+      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?, pay_at_shop=?, promos=?, loyalty_every=?, loyalty_max=?
        WHERE id=?`,
     ).run(
       next.name,
@@ -1112,6 +1258,9 @@ export function createApp(
       next.auto_accept,
       next.days,
       next.pay_at_shop,
+      next.promos,
+      next.loyalty_every,
+      next.loyalty_max,
       s.id,
     );
     res.json(shopOut(getShop(s.id)));
@@ -1157,6 +1306,72 @@ export function createApp(
       'Content-Disposition': `attachment; filename="pickgo-pedidos-${from}-a-${today}.csv"`,
     });
     res.send('\ufeff' + lines.map((l) => l.map(cell).join(';')).join('\r\n'));
+  });
+
+  // Lo que Pick&Go le generó al local en el período, comparado con el período anterior.
+  // Los minutos de fila evitados son una estimación con un valor conservador por pedido, y la app lo dice.
+  const QUEUE_MINUTES_PER_ORDER = 5;
+  app.get('/api/shop/impact', shopOnly, (req, res) => {
+    const days = daysOf(req);
+    const today = chileNow(now()).date;
+    const from = addDays(today, -(days - 1));
+    const prevFrom = addDays(from, -days);
+    const prevTo = addDays(from, -1);
+    const shopId = req.user.shop_id;
+    const base = `shop_id = ? AND payment_status NOT IN ${UNPAID}`;
+    const period = (a, b) =>
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(status = 'entregado'), 0) AS delivered,
+                  COALESCE(SUM(CASE WHEN status = 'entregado' THEN total ELSE 0 END), 0) AS sales,
+                  COALESCE(SUM(status = 'no_retirado' AND payment_method = 'app' AND payment_status = 'aprobado'), 0) AS no_show_paid,
+                  COALESCE(SUM(CASE WHEN status = 'no_retirado' AND payment_method = 'app' AND payment_status = 'aprobado' THEN total ELSE 0 END), 0) AS no_show_paid_amount,
+                  COALESCE(SUM(status = 'entregado' AND promo_discount > 0), 0) AS promo_orders,
+                  COALESCE(SUM(CASE WHEN status = 'entregado' AND promo_discount > 0 THEN total ELSE 0 END), 0) AS promo_sales,
+                  COALESCE(SUM(CASE WHEN status = 'entregado' THEN promo_discount ELSE 0 END), 0) AS promo_given,
+                  COALESCE(SUM(status = 'entregado' AND reward_discount > 0), 0) AS rewards
+           FROM orders WHERE ${base} AND substr(slot, 1, 10) BETWEEN ? AND ?`,
+        )
+        .get(shopId, a, b);
+    const cur = period(from, today);
+    const prev = period(prevFrom, prevTo);
+    // Horas peak: las de mayor demanda del período (al menos 80 % de la hora más pedida).
+    const hours = db
+      .prepare(
+        `SELECT CAST(substr(slot, 12, 2) AS INTEGER) AS hour, COUNT(*) AS orders FROM orders
+         WHERE ${base} AND status = 'entregado' AND substr(slot, 1, 10) BETWEEN ? AND ? GROUP BY hour`,
+      )
+      .all(shopId, from, today);
+    const top = Math.max(0, ...hours.map((h) => h.orders));
+    const peak = hours.filter((h) => top > 0 && h.orders >= top * 0.8);
+    const customers = db
+      .prepare(
+        `SELECT user_id, COUNT(*) AS n,
+                (SELECT MIN(substr(o2.slot, 1, 10)) FROM orders o2 WHERE o2.shop_id = o.shop_id AND o2.user_id = o.user_id AND o2.status = 'entregado') AS first
+         FROM orders o WHERE ${base} AND status = 'entregado' AND substr(slot, 1, 10) BETWEEN ? AND ? GROUP BY user_id`,
+      )
+      .all(shopId, from, today);
+    res.json({
+      days,
+      from,
+      to: today,
+      delivered: cur.delivered,
+      sales: cur.sales,
+      previous: { delivered: prev.delivered, sales: prev.sales },
+      peak_hours: peak.map((h) => h.hour).sort((a, b) => a - b),
+      peak_orders: peak.reduce((n, h) => n + h.orders, 0),
+      queue_minutes_saved: cur.delivered * QUEUE_MINUTES_PER_ORDER,
+      queue_minutes_per_order: QUEUE_MINUTES_PER_ORDER,
+      customers: customers.length,
+      returning: customers.filter((c) => c.n >= 2).length,
+      new_customers: customers.filter((c) => c.first >= from).length,
+      no_show_paid: cur.no_show_paid,
+      no_show_paid_amount: cur.no_show_paid_amount,
+      promo_orders: cur.promo_orders,
+      promo_sales: cur.promo_sales,
+      promo_given: cur.promo_given,
+      rewards: cur.rewards,
+    });
   });
 
   app.get('/api/shop/stats', shopOnly, (req, res) => {
@@ -1258,6 +1473,7 @@ export function createApp(
       available: b.available !== undefined ? (b.available ? 1 : 0) : base.available ?? 1,
       image_id: base.image_id ?? null,
       options: base.options ?? '[]',
+      prep_minutes: b.prepMinutes !== undefined ? int(b.prepMinutes, 0, 240, 'El tiempo de preparación') : base.prep_minutes ?? 0,
     };
     if (b.imageId !== undefined) {
       p.image_id = b.imageId === null ? null : int(b.imageId, 1, 1e12, 'La foto');
@@ -1312,9 +1528,9 @@ export function createApp(
     if (count >= 300) fail(409, 'Llegaste al máximo de 300 productos en el menú.');
     const id = db
       .prepare(
-        'INSERT INTO products (shop_id, category, name, description, price, emoji, available, image_id, options) VALUES (?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO products (shop_id, category, name, description, price, emoji, available, image_id, options, prep_minutes) VALUES (?,?,?,?,?,?,?,?,?,?)',
       )
-      .run(req.user.shop_id, p.category, p.name, p.description, p.price, p.emoji, p.available, p.image_id, p.options).lastInsertRowid;
+      .run(req.user.shop_id, p.category, p.name, p.description, p.price, p.emoji, p.available, p.image_id, p.options, p.prep_minutes).lastInsertRowid;
     res.status(201).json(productOut(id));
   });
 
@@ -1322,7 +1538,7 @@ export function createApp(
     const current = myProduct(req);
     const p = productBody(req.body ?? {}, current, req.user.shop_id);
     db.prepare(
-      'UPDATE products SET category=?, name=?, description=?, price=?, emoji=?, available=?, image_id=?, options=? WHERE id=?',
+      'UPDATE products SET category=?, name=?, description=?, price=?, emoji=?, available=?, image_id=?, options=?, prep_minutes=? WHERE id=?',
     ).run(
       p.category,
       p.name,
@@ -1332,6 +1548,7 @@ export function createApp(
       p.available,
       p.image_id,
       p.options,
+      p.prep_minutes,
       current.id,
     );
     sweepImages(req.user.shop_id);
