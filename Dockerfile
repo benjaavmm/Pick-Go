@@ -1,4 +1,4 @@
-# Imagen para correr Altiro en cualquier servicio que acepte contenedores.
+# Imagen para correr GoBite en cualquier servicio que acepte contenedores.
 FROM node:22-slim AS build
 WORKDIR /app
 COPY package*.json ./
@@ -8,7 +8,7 @@ RUN npm run build && npm prune --omit=dev
 
 FROM node:22-slim
 WORKDIR /app
-ENV NODE_ENV=production ALTIRO_DB=/data/altiro.db PORT=3001
+ENV NODE_ENV=production GOBITE_DB=/data/gobite.db PORT=3001
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server

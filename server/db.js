@@ -219,13 +219,13 @@ const MIGRATIONS = {
 const FIRST_MIGRATABLE = 3;
 
 /**
- * Archivo de la base: ALTIRO_DB o data/altiro.db. Si ese archivo todavía no existe pero junto a él está la base
+ * Archivo de la base: GOBITE_DB o data/gobite.db. Si ese archivo todavía no existe pero junto a él está la base
  * de antes del cambio de nombre (pickgo.db), se sigue usando esa para no perder datos.
  */
 export function dbFileFrom(env, root) {
-  const file = env.ALTIRO_DB ?? path.join(root, 'data', 'altiro.db');
+  const file = env.GOBITE_DB ?? path.join(root, 'data', 'gobite.db');
   const legacy = path.join(path.dirname(file), 'pickgo.db');
-  if (path.basename(file) === 'altiro.db' && !fs.existsSync(file) && fs.existsSync(legacy)) return legacy;
+  if (path.basename(file) === 'gobite.db' && !fs.existsSync(file) && fs.existsSync(legacy)) return legacy;
   return file;
 }
 

@@ -3,7 +3,7 @@ import { operatorForCity } from './baes.js';
 import { BRAND } from './brand.js';
 import { addDays, chileNow, hhmm } from './time.js';
 
-export const DEMO_PASSWORD = 'altiro123';
+export const DEMO_PASSWORD = 'gobite123';
 
 // Datos de demostración. Los locales, menús y precios son inventados: cada local real edita los suyos desde su panel.
 const DATA = [
@@ -16,7 +16,7 @@ const DATA = [
         shops: [
           {
             name: 'Café Andén',
-            email: 'cafe@altiro.cl',
+            email: 'cafe@gobite.cl',
             description: 'Cafetería, almuerzos caseros y para llevar',
             emoji: '☕',
             location: 'Acceso principal',
@@ -42,7 +42,7 @@ const DATA = [
           },
           {
             name: 'La Sanguchería',
-            email: 'sangucheria@altiro.cl',
+            email: 'sangucheria@gobite.cl',
             description: 'Sándwiches chilenos y para picar',
             emoji: '🥪',
             location: 'Patio central',
@@ -64,7 +64,7 @@ const DATA = [
           },
           {
             name: 'Casino',
-            email: 'casino@altiro.cl',
+            email: 'casino@gobite.cl',
             description: 'Almuerzo del día y colaciones',
             emoji: '🍛',
             location: 'Segundo piso',
@@ -98,7 +98,7 @@ const DATA = [
         shops: [
           {
             name: 'Cafetería Central',
-            email: 'cafeteria@altiro.cl',
+            email: 'cafeteria@gobite.cl',
             description: 'Café de especialidad y pastelería',
             emoji: '🧁',
             location: 'Biblioteca, primer piso',
@@ -241,7 +241,7 @@ export function seedIfEmpty(db, { now = new Date(), history = true } = {}) {
     const instId = db.prepare('INSERT INTO institutions (name) VALUES (?)').run(inst.institution).lastInsertRowid;
     insUser.run(
       `Administración ${inst.institution}`,
-      index === 0 ? 'admin@altiro.cl' : `admin${index + 1}@altiro.cl`,
+      index === 0 ? 'admin@gobite.cl' : `admin${index + 1}@gobite.cl`,
       passHash,
       'admin',
       null,
@@ -288,8 +288,8 @@ export function seedIfEmpty(db, { now = new Date(), history = true } = {}) {
   );
   // El menú del día necesita más tiempo que el resto del Casino.
   db.prepare("UPDATE products SET prep_minutes = 25 WHERE name IN ('Menú del día', 'Menú vegetariano')").run();
-  insUser.run(`Equipo ${BRAND}`, 'plataforma@altiro.cl', passHash, 'owner', null, null, null, nowIso);
-  const studentIds = [insUser.run('Estudiante Demo', 'estudiante@altiro.cl', passHash, 'student', firstCampus, null, null, nowIso).lastInsertRowid];
+  insUser.run(`Equipo ${BRAND}`, 'plataforma@gobite.cl', passHash, 'owner', null, null, null, nowIso);
+  const studentIds = [insUser.run('Estudiante Demo', 'estudiante@gobite.cl', passHash, 'student', firstCampus, null, null, nowIso).lastInsertRowid];
   // La estudiante de la demo tiene beca Junaeb y sus recreos guardados, para mostrar las dos funciones.
   db.prepare('UPDATE users SET baes = 1, breaks = ? WHERE id = ?').run(
     JSON.stringify([
@@ -301,7 +301,7 @@ export function seedIfEmpty(db, { now = new Date(), history = true } = {}) {
   );
   if (history) {
     DEMO_STUDENTS.forEach((name, i) =>
-      studentIds.push(insUser.run(name, `demo${i + 1}@altiro.cl`, passHash, 'student', firstCampus, null, null, nowIso).lastInsertRowid),
+      studentIds.push(insUser.run(name, `demo${i + 1}@gobite.cl`, passHash, 'student', firstCampus, null, null, nowIso).lastInsertRowid),
     );
     seedHistory(db, now, historyShops, studentIds.slice(1));
   }

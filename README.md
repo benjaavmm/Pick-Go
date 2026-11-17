@@ -1,6 +1,6 @@
-# Altiro
+# GoBite
 
-**Pide entre clases. Retira altiro.** Altiro es una app para estudiantes de universidades e institutos de Chile: pides
+**Pide entre clases. Retira sin fila.** GoBite es una app para estudiantes de universidades e institutos de Chile: pides
 en los locales de tu sede, retiras justo en tu recreo y el local recibe el pedido al instante para tenerlo listo a esa
 hora. Así no pierdes en la fila los 10 minutos que tienes para comer.
 
@@ -52,7 +52,7 @@ Lo que la distingue:
 - Días de atención por local, impresión de comandas y descarga de pedidos en CSV (con el medio de pago).
 - **Beca Junaeb**: el local la activa si está adherido al operador de su sede. Al entregar un pedido con beca, la app
   muestra el monto y cómo cobrarlo, y el local confirma si se cobró con la beca o con otro medio.
-- Panel «Lo que ganaste con Altiro»: ventas por la app, pedidos en horas peak, fila evitada (estimada),
+- Panel «Lo que ganaste con GoBite»: ventas por la app, pedidos en horas peak, fila evitada (estimada),
   clientes nuevos y recurrentes, y pedidos no retirados que igual se cobraron.
 - Promociones en horas tranquilas, tarjeta de sellos, tiempo de preparación por producto e impresión automática de
   la comanda al aceptar.
@@ -67,7 +67,7 @@ Lo que la distingue:
 - Aprobación de locales: un local nuevo no aparece para los estudiantes hasta que la institución lo aprueba.
 - Creación de sedes, con el operador de la beca Junaeb de cada una (se puede corregir si Junaeb lo cambia).
 
-**Plataforma** (quien opera Altiro)
+**Plataforma** (quien opera GoBite)
 
 - Define la comisión, ve cuánto transferir a cada local y registra cada transferencia; el local ve el detalle.
 - Crea instituciones con su primera sede y su cuenta de administración.
@@ -88,16 +88,16 @@ npm run dev
 Abre <http://localhost:5173>. La primera vez se crea la base de datos con datos de demostración, incluido un
 historial de pedidos de la última semana para que las métricas tengan contenido.
 
-La pantalla de ingreso tiene botones para entrar con las cuentas de prueba. Todas usan la contraseña `altiro123`:
+La pantalla de ingreso tiene botones para entrar con las cuentas de prueba. Todas usan la contraseña `gobite123`:
 
 | Rol | Correo |
 | --- | --- |
-| Estudiante (con beca y recreos guardados) | `estudiante@altiro.cl` |
-| Local (Café Andén, recibe la beca) | `cafe@altiro.cl` |
-| Local (La Sanguchería) | `sangucheria@altiro.cl` |
-| Local (Casino, recibe la beca) | `casino@altiro.cl` |
-| Institución (Duoc UC) | `admin@altiro.cl` |
-| Plataforma | `plataforma@altiro.cl` |
+| Estudiante (con beca y recreos guardados) | `estudiante@gobite.cl` |
+| Local (Café Andén, recibe la beca) | `cafe@gobite.cl` |
+| Local (La Sanguchería) | `sangucheria@gobite.cl` |
+| Local (Casino, recibe la beca) | `casino@gobite.cl` |
+| Institución (Duoc UC) | `admin@gobite.cl` |
+| Plataforma | `plataforma@gobite.cl` |
 
 Para ver los avisos en vivo, abre el estudiante y el local en ventanas distintas (una de incógnito).
 
@@ -119,43 +119,43 @@ y con HTTPS o en `localhost`.
 | Variable | Por defecto | Para qué sirve |
 | --- | --- | --- |
 | `PORT` | `3001` | Puerto del servidor |
-| `ALTIRO_DB` | `data/altiro.db` | Archivo de la base de datos SQLite |
-| `ALTIRO_DEMO` | activado | Con `0` arranca sin datos ni cuentas de demostración |
-| `ALTIRO_OWNER_EMAIL` y `ALTIRO_OWNER_PASSWORD` | sin definir | Crean la cuenta de plataforma al arrancar, si no existe |
-| `ALTIRO_SMTP_URL` | sin definir | Servidor de correo, por ejemplo `smtps://usuario:clave@smtp.proveedor.com` |
-| `ALTIRO_MAIL_FROM` | sin definir | Remitente, por ejemplo `Altiro <no-responder@tudominio.cl>` |
-| `ALTIRO_PUBLIC_URL` | sin definir | Dirección pública de la app, para los enlaces de los correos |
+| `GOBITE_DB` | `data/gobite.db` | Archivo de la base de datos SQLite |
+| `GOBITE_DEMO` | activado | Con `0` arranca sin datos ni cuentas de demostración |
+| `GOBITE_OWNER_EMAIL` y `GOBITE_OWNER_PASSWORD` | sin definir | Crean la cuenta de plataforma al arrancar, si no existe |
+| `GOBITE_SMTP_URL` | sin definir | Servidor de correo, por ejemplo `smtps://usuario:clave@smtp.proveedor.com` |
+| `GOBITE_MAIL_FROM` | sin definir | Remitente, por ejemplo `GoBite <no-responder@tudominio.cl>` |
+| `GOBITE_PUBLIC_URL` | sin definir | Dirección pública de la app, para los enlaces de los correos |
 
-Las variables con el nombre anterior (`PICKGO_*`) se siguen aceptando: si falta la `ALTIRO_*`, se usa la antigua y
-el servidor avisa en el registro. Del mismo modo, si existe `data/pickgo.db` y todavía no hay `data/altiro.db`, se
+Las variables con el nombre anterior (`PICKGO_*`) se siguen aceptando: si falta la `GOBITE_*`, se usa la antigua y
+el servidor avisa en el registro. Del mismo modo, si existe `data/pickgo.db` y todavía no hay `data/gobite.db`, se
 sigue usando la base anterior.
 
 Con las tres variables de correo definidas se activan la recuperación de contraseña por correo y los avisos a la
 institución (local nuevo por aprobar) y al local (aprobado o suspendido). Sin ellas, la app funciona igual y la
 plataforma recupera accesos con contraseñas temporales.
 | `TRUST_PROXY` | sin definir | Defínela si el servidor queda detrás de un proxy con HTTPS |
-| `ALTIRO_VAPID_SUBJECT` | `mailto:soporte@example.com` | Contacto del operador que exigen los servicios de push; usa uno real en producción |
+| `GOBITE_VAPID_SUBJECT` | `mailto:soporte@example.com` | Contacto del operador que exigen los servicios de push; usa uno real en producción |
 
 ## Cobro en la app
 
-El dinero de los pedidos pagados en la app entra a la cuenta de quien opera Altiro. La app calcula la comisión de
+El dinero de los pedidos pagados en la app entra a la cuenta de quien opera GoBite. La app calcula la comisión de
 cada pedido y, en **Plataforma → Pagos**, muestra cuánto transferir a cada local; al registrar la transferencia, el
 local la ve con su detalle. Se liquida lo entregado y lo no retirado; lo cancelado se devuelve al estudiante.
 
-| `ALTIRO_PAYMENTS` | Qué hace |
+| `GOBITE_PAYMENTS` | Qué hace |
 | --- | --- |
 | sin definir | Sin cobro en la app: todo se paga en el local (con datos de demostración se usa `simulado`) |
 | `simulado` | **Marcha blanca**: flujo completo con una pantalla de pago de prueba. No se mueve dinero |
 | `mercadopago` | Cobro real con Mercado Pago Checkout Pro, con la API de Orders (`/v1/orders`) |
 
-Para Mercado Pago define además `ALTIRO_MP_ACCESS_TOKEN` (de tu cuenta de Mercado Pago Developers; las credenciales
-de prueba permiten pagar con tarjetas de prueba), `ALTIRO_PUBLIC_URL` (dirección `https://` pública de la app, a la
-que Mercado Pago envía los avisos de pago) y, recomendado, `ALTIRO_MP_WEBHOOK_SECRET` (la firma secreta de las
+Para Mercado Pago define además `GOBITE_MP_ACCESS_TOKEN` (de tu cuenta de Mercado Pago Developers; las credenciales
+de prueba permiten pagar con tarjetas de prueba), `GOBITE_PUBLIC_URL` (dirección `https://` pública de la app, a la
+que Mercado Pago envía los avisos de pago) y, recomendado, `GOBITE_MP_WEBHOOK_SECRET` (la firma secreta de las
 notificaciones). En el panel de Mercado Pago, en Configuración de Webhooks, usa la URL
 `https://TU-DIRECCION/api/payments/webhook` con el evento **Order (Mercado Pago)**. La app nunca confía en lo que diga el navegador ni el aviso: siempre vuelve a consultar el pago a
 Mercado Pago y revisa que el monto coincida.
 
-Ten en cuenta que Mercado Pago cobra su propia comisión a tu cuenta: la comisión de Altiro debe cubrirla.
+Ten en cuenta que Mercado Pago cobra su propia comisión a tu cuenta: la comisión de GoBite debe cubrirla.
 
 ## Beca Junaeb (BAES)
 
@@ -183,15 +183,15 @@ pensado para sumar otro proveedor de cobro, como se sumó Mercado Pago.
 
 ## Operar con instituciones reales
 
-1. Arranca con `ALTIRO_DEMO=0` y define `ALTIRO_OWNER_EMAIL` y `ALTIRO_OWNER_PASSWORD`. La base parte vacía, con
+1. Arranca con `GOBITE_DEMO=0` y define `GOBITE_OWNER_EMAIL` y `GOBITE_OWNER_PASSWORD`. La base parte vacía, con
    solo tu cuenta de plataforma.
 2. Entra con esa cuenta y crea la institución: la app te muestra una vez el correo y la contraseña temporal de su
    administración.
 3. La administración entra, cambia su contraseña y crea las sedes que falten.
-4. Cada local se registra solo desde «Súmalo a Altiro» y la administración lo aprueba.
+4. Cada local se registra solo desde «Súmalo a GoBite» y la administración lo aprueba.
 5. Los estudiantes se registran solos eligiendo su sede.
 
-La base de datos es un archivo SQLite (`ALTIRO_DB`). Cada día se guarda una copia en la carpeta `respaldos`, junto
+La base de datos es un archivo SQLite (`GOBITE_DB`). Cada día se guarda una copia en la carpeta `respaldos`, junto
 a la base, y se conservan las últimas siete. Guarda ese archivo en un disco que no se borre.
 
 También hay un `Dockerfile` para correrla en cualquier servicio de contenedores; la base vive en `/data`, donde hay

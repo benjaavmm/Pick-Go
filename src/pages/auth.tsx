@@ -16,7 +16,7 @@ function AuthShell({ children, hero }: { children: ReactNode; hero?: ReactNode }
             <h1 className="display">
               Pide entre clases.
               <br />
-              <mark>Retira altiro.</mark>
+              <mark>Retira sin fila.</mark>
             </h1>
             <p>Pide en los locales de tu sede y retira justo en tu recreo, sin fila. También con tu beca Junaeb.</p>
             <ol className="steps">
@@ -127,7 +127,7 @@ export function Login() {
 
   const quick = async (mail: string) => {
     try {
-      setUser(await api<User>('/auth/login', 'POST', { email: mail, password: 'altiro123' }));
+      setUser(await api<User>('/auth/login', 'POST', { email: mail, password: 'gobite123' }));
     } catch (err) {
       setDemoError(errorText(err));
     }
@@ -177,19 +177,19 @@ export function Login() {
           <h2>Explora la demo</h2>
           <p>Entra con una cuenta de prueba. Abre dos ventanas para ver los avisos en vivo entre estudiante y local.</p>
           <div className="demo-grid">
-            <button onClick={() => quick('estudiante@altiro.cl')}>
+            <button onClick={() => quick('estudiante@gobite.cl')}>
               <GraduationCap size={22} aria-hidden />
               Estudiante
             </button>
-            <button onClick={() => quick('cafe@altiro.cl')}>
+            <button onClick={() => quick('cafe@gobite.cl')}>
               <Store size={22} aria-hidden />
               Local
             </button>
-            <button onClick={() => quick('admin@altiro.cl')}>
+            <button onClick={() => quick('admin@gobite.cl')}>
               <Building2 size={22} aria-hidden />
               Institución
             </button>
-            <button onClick={() => quick('plataforma@altiro.cl')}>
+            <button onClick={() => quick('plataforma@gobite.cl')}>
               <ShieldCheck size={22} aria-hidden />
               Plataforma
             </button>

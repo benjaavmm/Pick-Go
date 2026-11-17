@@ -1,6 +1,6 @@
-// Service worker de Altiro: permite instalar la app, abrirla con mala señal
+// Service worker de GoBite: permite instalar la app, abrirla con mala señal
 // y recibir avisos aunque esté cerrada. Nunca guarda respuestas de la API.
-const CACHE = 'altiro-v3';
+const CACHE = 'gobite-v4';
 const SHELL = ['/', '/manifest.webmanifest', '/icon-192.png'];
 
 self.addEventListener('install', (event) => {
@@ -71,7 +71,7 @@ self.addEventListener('push', (event) => {
     data = {};
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Altiro', {
+    self.registration.showNotification(data.title || 'GoBite', {
       body: data.body || '',
       icon: '/icon-192.png',
       badge: '/badge.png',
