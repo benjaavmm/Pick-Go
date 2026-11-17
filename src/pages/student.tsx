@@ -9,6 +9,7 @@ import {
   Receipt,
   RotateCcw,
   Search,
+  ShieldCheck,
   ShoppingBag,
   Store,
   TriangleAlert,
@@ -627,7 +628,8 @@ export function Checkout() {
   const navigate = useNavigate();
   const shopId = cart.shopId;
   const slots = useLoad(() => (shopId ? api<Slot[]>(`/shops/${shopId}/slots`) : Promise.resolve([])), [shopId]);
-  const { payments } = useApp();
+  const { payments, demo } = useApp();
+  const [reviewing, setReviewing] = useState(false);
   const shopInfo = useLoad(() => (shopId ? api<{ shop: Shop }>(`/shops/${shopId}`) : Promise.resolve(null)), [shopId]);
   const payAtShop = !payments || !!shopInfo.data?.shop.pay_at_shop;
   const [slot, setSlot] = useState('');
@@ -778,10 +780,80 @@ export function Checkout() {
           <span>{slot ? `Retiro ${slotLabel(slot).toLowerCase()}` : 'Elige una hora de retiro'}</span>
           <strong>{money(cartTotal)}</strong>
         </div>
-        <button className="btn btn-primary" disabled={busy || !slot || user!.can_order === false} onClick={confirm}>
-          {busy ? 'Enviando…' : payMethod === 'app' ? `Pagar ${money(cartTotal)}` : 'Confirmar pedido'}
+        <button
+          className="btn btn-primary"
+          disabled={busy || !slot || user!.can_order === false}
+          onClick={() => (payMethod === 'app' ? setReviewing(true) : confirm())}
+        >
+          {busy ? 'Enviando…' : payMethod === 'app' ? 'Continuar al pago' : 'Confirmar pedido'}
         </button>
       </div>
+
+      {reviewing && (
+        <Sheet title="Revisa y paga" onClose={() => !busy && setReviewing(false)}>
+          <section className="review">
+            <div>
+              <span>Local</span>
+              <strong>{cart.shopName}</strong>
+            </div>
+            <div>
+              <span>Retiro</span>
+              <strong>{slot ? slotLabel(slot) : '—'}</strong>
+            </div>
+            <div>
+              <span>Productos</span>
+              <strong>{cart.lines.reduce((n, l) => n + l.qty, 0)}</strong>
+            </div>
+            <div className="review-total">
+              <span>Total a pagar</span>
+              <strong>{money(cartTotal)}</strong>
+            </div>
+          </section>
+
+          <section className="pay-provider">
+            <ShieldCheck size={22} aria-hidden />
+            <div>
+              <strong>{payments === 'simulado' ? 'Pago de prueba dentro de Pick&Go' : 'Pagas con Mercado Pago'}</strong>
+              <p className="muted">
+                {payments === 'simulado'
+                  ? 'Esta versión usa un pago de prueba: no se cobra dinero.'
+                  : 'Te llevamos a la página segura de Mercado Pago para pagar con tarjeta de crédito, débito o tu saldo. Pick&Go no ve ni guarda los datos de tu tarjeta.'}
+              </p>
+            </div>
+          </section>
+
+          {demo && payments === 'mercadopago' && (
+            <p className="notice notice-warn">
+              <TriangleAlert size={18} aria-hidden />
+              <span>
+                Ambiente de prueba: Mercado Pago no cobra dinero real. Paga con una cuenta compradora de prueba y una tarjeta de
+                prueba.
+              </span>
+            </p>
+          )}
+
+          <ul className="policy">
+            <li>Tu hora queda reservada 15 minutos mientras pagas. Si no pagas, se libera sola y no se cobra nada.</li>
+            <li>El local recibe tu pedido apenas se aprueba el pago.</li>
+            <li>Si el local lo rechaza, o lo cancelas antes de que lo acepte, te devolvemos el pago completo.</li>
+            <li>
+              <strong>Si no lo retiras, no hay devolución:</strong> el local ya lo preparó para ti.
+            </li>
+          </ul>
+
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          <button className="btn btn-primary btn-block" disabled={busy} onClick={confirm}>
+            {busy ? 'Abriendo el pago…' : payments === 'simulado' ? `Ir al pago de prueba · ${money(cartTotal)}` : `Pagar ${money(cartTotal)} con Mercado Pago`}
+          </button>
+          <p className="muted small center">
+            Al pagar aceptas las <Link to="/condiciones">Condiciones de uso</Link>.
+          </p>
+        </Sheet>
+      )}
     </main>
   );
 }
