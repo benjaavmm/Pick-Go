@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, Star, UtensilsCrossed, X } from 'lucide-react';
-import { Component, useEffect, useRef, type ReactNode } from 'react';
+import { Component, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { BRAND } from './brand';
 import { cardStyle, inkOn, money, STATUS_LABEL, type Loyalty, type Status } from './lib';
@@ -212,16 +212,43 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
   }
 }
 
-/** Pantalla de carga: una mano entra por la izquierda, toma la bolsa y se la lleva por la derecha. */
+/**
+ * Letras del logo en la pantalla de carga: [letra, x donde parte (centrado sobre la bolsa, medido con la tipografía
+ * del logo a 40 px), desplazamiento horizontal hasta la boca de la bolsa, giro al caer].
+ */
+const SPLASH_LETTERS: [string, number, number, number][] = [
+  ['T', 84.5, 32.1, -14],
+  ['o', 103.2, 23.5, 10],
+  ['r', 125.8, 16.2, -8],
+  ['u', 141.9, 8.3, 12],
+  ['G', 165.4, -5.1, -10],
+  ['o', 192.9, -54.2, 16],
+];
+
+/**
+ * Pantalla de carga: las letras de ToruGo caen una por una dentro de la bolsa, la bolsa se asienta y recién ahí
+ * entra una mano por la izquierda, la toma y se la lleva por la derecha.
+ */
 export function Splash() {
   return (
     <div className="splash" role="status" aria-label={`Cargando ${BRAND}`}>
-      <Logo size="lg" />
-      <svg className="grab" viewBox="0 0 300 180" aria-hidden>
+      <svg className="grab" viewBox="0 -24 300 204" aria-hidden>
         <line className="grab-floor" x1="40" y1="165" x2="260" y2="165" />
         <ellipse className="grab-shadow" cx="150" cy="165" rx="52" ry="6" />
         <g className="grab-bag">
           <path className="grab-line" d="M128 86 C128 46 172 46 172 86" />
+          {/* Las letras van entre el asa y el frente de la bolsa: al caer quedan escondidas adentro. */}
+          {SPLASH_LETTERS.map(([ch, x, dx, rot], i) => (
+            <text
+              key={i}
+              className={`grab-letter grab-letter-${i} ${i >= 4 ? 'go' : ''}`}
+              x={x}
+              y="36"
+              style={{ '--dx': `${dx}px`, '--rot': `${rot}deg` } as CSSProperties}
+            >
+              {ch}
+            </text>
+          ))}
           <path className="grab-paper" d="M108 84 H192 L186 152 a10 10 0 0 1 -10 9 H124 a10 10 0 0 1 -10 -9 Z" />
           <rect className="grab-badge" x="131" y="104" width="38" height="38" rx="11" />
           <path className="grab-check" d="M141 123 l7 7 l13 -15" />

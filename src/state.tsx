@@ -53,7 +53,7 @@ export type PushState = 'on' | 'off' | 'denied' | 'ios-install' | 'unsupported';
 export type Theme = 'claro' | 'oscuro' | 'auto';
 const THEME_KEY = 'torugo.theme';
 /** La pantalla de carga se muestra al menos este tiempo, para que la animación se vea completa. */
-const SPLASH_MS = 2000;
+const SPLASH_MS = 2800;
 
 // Se calcula una sola vez por carga de página: true solo la primera vez que se abre la app en esta sesión.
 const SHOW_INTRO = (() => {

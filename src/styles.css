@@ -233,14 +233,26 @@ svg {
   fill: var(--on-dark);
   opacity: 0.14;
   transform-origin: 150px 164px;
-  animation: grab-shadow 2s cubic-bezier(0.6, 0, 0.3, 1) infinite;
+  animation: grab-shadow 2.8s linear infinite;
 }
 .grab-bag {
   transform-origin: 150px 160px;
-  animation: grab-bag 2s cubic-bezier(0.6, 0, 0.3, 1) infinite;
+  animation: grab-bag 2.8s linear infinite;
 }
 .grab-hand {
-  animation: grab-hand 2s cubic-bezier(0.6, 0, 0.3, 1) infinite;
+  animation: grab-hand 2.8s linear infinite;
+}
+/* Letras del logo: «Toru» en el color del texto y «Go» en el de resalte, como el logo. */
+.grab-letter {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 40px;
+  fill: var(--on-dark);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.grab-letter.go {
+  fill: var(--pop);
 }
 .grab-ink {
   fill: var(--blue);
@@ -277,40 +289,241 @@ svg {
 :root[data-theme='dark'] .grab-line {
   stroke: #eef4fc;
 }
-@keyframes grab-hand {
+/* Línea de tiempo (2.8s): 0–4 % aparece la escena; 12–55 % caen las letras; 56–62 % la bolsa se asienta;
+   62–76 % entra la mano y la toma; 76–100 % se la lleva. */
+@keyframes grab-letter-0 {
   0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0);
+  }
+  4%,
+  12% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+    animation-timing-function: ease-out;
+  }
+  15% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.15), -8px) rotate(calc(var(--rot) * 0.3));
+    animation-timing-function: cubic-bezier(0.55, 0, 0.9, 0.4);
+  }
+  25% {
+    opacity: 1;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+  26%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+}
+.grab-letter-0 {
+  animation: grab-letter-0 2.8s linear infinite;
+}
+@keyframes grab-letter-1 {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0);
+  }
+  4%,
+  18% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+    animation-timing-function: ease-out;
+  }
+  21% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.15), -8px) rotate(calc(var(--rot) * 0.3));
+    animation-timing-function: cubic-bezier(0.55, 0, 0.9, 0.4);
+  }
+  31% {
+    opacity: 1;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+  32%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+}
+.grab-letter-1 {
+  animation: grab-letter-1 2.8s linear infinite;
+}
+@keyframes grab-letter-2 {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0);
+  }
+  4%,
+  24% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+    animation-timing-function: ease-out;
+  }
+  27% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.15), -8px) rotate(calc(var(--rot) * 0.3));
+    animation-timing-function: cubic-bezier(0.55, 0, 0.9, 0.4);
+  }
+  37% {
+    opacity: 1;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+  38%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+}
+.grab-letter-2 {
+  animation: grab-letter-2 2.8s linear infinite;
+}
+@keyframes grab-letter-3 {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0);
+  }
+  4%,
+  30% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+    animation-timing-function: ease-out;
+  }
+  33% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.15), -8px) rotate(calc(var(--rot) * 0.3));
+    animation-timing-function: cubic-bezier(0.55, 0, 0.9, 0.4);
+  }
+  43% {
+    opacity: 1;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+  44%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+}
+.grab-letter-3 {
+  animation: grab-letter-3 2.8s linear infinite;
+}
+@keyframes grab-letter-4 {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0);
+  }
+  4%,
+  36% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+    animation-timing-function: ease-out;
+  }
+  39% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.15), -8px) rotate(calc(var(--rot) * 0.3));
+    animation-timing-function: cubic-bezier(0.55, 0, 0.9, 0.4);
+  }
+  49% {
+    opacity: 1;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+  50%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+}
+.grab-letter-4 {
+  animation: grab-letter-4 2.8s linear infinite;
+}
+@keyframes grab-letter-5 {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0);
+  }
+  4%,
+  42% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+    animation-timing-function: ease-out;
+  }
+  45% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.15), -8px) rotate(calc(var(--rot) * 0.3));
+    animation-timing-function: cubic-bezier(0.55, 0, 0.9, 0.4);
+  }
+  55% {
+    opacity: 1;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+  56%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), 92px) rotate(var(--rot));
+  }
+}
+.grab-letter-5 {
+  animation: grab-letter-5 2.8s linear infinite;
+}
+@keyframes grab-hand {
+  0%,
+  60% {
     transform: translate(-190px, 0);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1);
   }
-  34%,
-  40% {
+  74%,
+  78% {
     transform: translate(0, 0);
+    animation-timing-function: ease-out;
   }
-  50% {
+  84% {
     transform: translate(0, -12px);
+    animation-timing-function: cubic-bezier(0.6, 0, 0.8, 0.6);
   }
   100% {
     transform: translate(370px, -12px);
   }
 }
 @keyframes grab-bag {
-  0%,
-  40% {
-    transform: translate(0, 0) rotate(0);
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(1, 1);
   }
-  50% {
+  4%,
+  55% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1, 1);
+  }
+  /* Recibe la última letra: se hunde un poco y rebota. */
+  58% {
+    transform: translate(0, 0) scale(1.04, 0.95);
+  }
+  62%,
+  78% {
+    transform: translate(0, 0) scale(1, 1);
+    animation-timing-function: ease-out;
+  }
+  84% {
+    opacity: 1;
     transform: translate(0, -12px) rotate(-5deg);
+    animation-timing-function: cubic-bezier(0.6, 0, 0.8, 0.6);
   }
   100% {
+    opacity: 1;
     transform: translate(370px, -12px) rotate(4deg);
   }
 }
 @keyframes grab-shadow {
-  0%,
-  40% {
+  0% {
+    transform: scale(1);
+    opacity: 0;
+  }
+  4%,
+  78% {
     transform: scale(1);
     opacity: 0.14;
   }
-  50%,
+  84%,
   100% {
     transform: scale(0.4);
     opacity: 0;
