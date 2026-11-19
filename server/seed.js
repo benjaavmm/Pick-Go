@@ -5,7 +5,9 @@ import { addDays, chileNow, hhmm } from './time.js';
 
 export const DEMO_PASSWORD = 'torugo123';
 
-// Datos de demostración. Los locales, menús y precios son inventados: cada local real edita los suyos desde su panel.
+// Datos de demostración. En la Sede Viña del Mar están los locales que los estudiantes más usan (Pronto Copec,
+// Pepe Pug y el Casino). Sus colores se aproximan a los de cada marca y sus menús a lo que venden, pero los
+// precios son de ejemplo: cada local real edita su menú, sus precios y sus colores desde su panel.
 const DATA = [
   {
     institution: 'Duoc UC',
@@ -15,50 +17,72 @@ const DATA = [
         city: 'Viña del Mar',
         shops: [
           {
-            name: 'Café Andén',
-            email: 'cafe@torugo.cl',
-            description: 'Cafetería, almuerzos caseros y para llevar',
-            emoji: '☕',
-            location: 'Acceso principal',
-            opens: 450,
-            closes: 1320,
+            name: 'Pepe Pug',
+            email: 'pepepug@torugo.cl',
+            description: 'Cafetería de paso: café, bubble tea y algo rico para el recreo',
+            emoji: '🧋',
+            location: 'Acceso Álvarez',
+            opens: 480,
+            closes: 1350,
+            days: '123456',
             prep: 10,
             capacity: 6,
             baes: true,
+            // Negro y café claro, como un pug.
+            color: '#2b2420',
+            color2: '#e3c39d',
             products: [
-              ['Desayunos', 'Café con queque', 'Café de filtro 250 ml y queque de naranja', 2100, '☕'],
-              ['Desayunos', 'Pan amasado con palta', 'Recién horneado', 2300, '🥑'],
-              ['Desayunos', 'Bowl de yogur', 'Yogur griego, avena tostada y plátano', 2400, '🥣'],
-              ['Almuerzos', 'Plato del día', 'Fondo casero con acompañamiento y ensalada', 4300, '🍲'],
-              ['Almuerzos', 'Wrap de pollo al pesto', 'Tortilla integral, pollo, tomate y pesto', 3400, '🌯'],
-              ['Almuerzos', 'Pastel de choclo', 'Porción individual', 4600, '🌽'],
-              ['Almuerzos', 'Ensalada César', 'Lechuga, pollo grillé, crutones y parmesano', 3700, '🥗'],
-              ['Almuerzos', 'Barros jarpa', 'Jamón y queso fundido en pan frica', 2600, '🥪'],
-              ['Bebidas', 'Café americano', '350 ml', 1500, '☕'],
-              ['Bebidas', 'Té con leche', '300 ml', 1300, '🍵'],
-              ['Bebidas', 'Jugo natural', 'Naranja o piña, 400 ml', 1900, '🧃'],
+              ['Bubble tea', 'Bubble tea de leche', 'Té negro con leche y perlas de tapioca', 3200, '🧋'],
+              ['Bubble tea', 'Bubble tea de frutas', 'Té verde con maracuyá o frutilla y perlas explosivas', 3300, '🧋'],
+              ['Bubble tea', 'Taro latte', 'Leche con taro y perlas de tapioca', 3400, '🧋'],
+              ['Bubble tea', 'Matcha latte frío', 'Matcha con leche y hielo', 3300, '🍵'],
+              ['Café', 'Café americano', '350 ml', 1500, '☕'],
+              ['Café', 'Capuccino', '300 ml', 2300, '☕'],
+              ['Café', 'Latte de vainilla', '350 ml', 2600, '☕'],
+              ['Café', 'Mokaccino', 'Café, chocolate y leche espumada', 2700, '☕'],
+              ['Café', 'Frappé de moka', 'Café helado con chocolate y crema', 3400, '🥤'],
+              ['Café', 'Chocolate caliente', '300 ml', 2200, '🍫'],
+              ['Para comer', 'Croissant de jamón y queso', 'Tibio', 2400, '🥐'],
+              ['Para comer', 'Sándwich de ave pimentón', 'En pan ciabatta', 3200, '🥪'],
+              ['Para comer', 'Muffin de arándanos', 'Del día', 1600, '🧁'],
+              ['Para comer', 'Brownie', 'Con nueces', 1500, '🍫'],
+              ['Para comer', 'Galleta con chips', 'Grande', 1000, '🍪'],
+              ['Para comer', 'Cheesecake de frambuesa', 'Porción', 2500, '🍰'],
+              ['Bebidas', 'Jugo natural', 'Naranja o frutilla, 400 ml', 1900, '🧃'],
               ['Bebidas', 'Agua mineral', 'Con o sin gas, 500 ml', 1000, '💧'],
             ],
           },
           {
-            name: 'La Sanguchería',
-            email: 'sangucheria@torugo.cl',
-            description: 'Sándwiches chilenos y para picar',
-            emoji: '🥪',
-            location: 'Patio central',
-            opens: 540,
-            closes: 1260,
+            name: 'Pronto Copec',
+            email: 'copec@torugo.cl',
+            description: 'Completos, sándwiches, café de grano y algo para picar',
+            emoji: '🌭',
+            location: 'Frente a la sede',
+            opens: 450,
+            closes: 1290,
             prep: 10,
             capacity: 5,
+            // Rojo y azul de Copec.
+            color: '#d71920',
+            color2: '#0b3b8c',
             products: [
-              ['Sándwiches', 'Chacarero', 'Carne, porotos verdes, tomate y ají verde', 4300, '🥙'],
-              ['Sándwiches', 'Lomito italiano', 'Lomo de cerdo, palta, tomate y mayo', 4100, '🥪'],
-              ['Sándwiches', 'As luco', 'Carne y queso fundido', 3600, '🥪'],
-              ['Sándwiches', 'Burger de garbanzos', 'Lechuga, tomate y salsa de yogur', 3700, '🍔'],
+              ['Completos', 'Completo italiano', 'Tomate, palta y mayo', 2900, '🌭'],
+              ['Completos', 'Completo palta', 'Palta Hass', 2700, '🌭'],
+              ['Completos', 'Completo dinámico', 'Tomate, palta, mayo, americana y chucrut', 3200, '🌭'],
+              ['Completos', 'As italiano', 'Carne, tomate, palta y mayo en pan de completo', 3900, '🌭'],
+              ['Sándwiches', 'Churrasco italiano', 'Carne de vacuno, tomate, palta y mayo', 4700, '🥪'],
+              ['Sándwiches', 'Barros luco', 'Carne de vacuno y queso fundido', 4300, '🥪'],
+              ['Sándwiches', 'Ave palta', 'Pollo, palta y mayo en pan frica', 3900, '🥪'],
+              ['Sándwiches', 'Croissant jamón queso', 'Tibio', 2300, '🥐'],
               ['Para picar', 'Papas fritas', 'Porción mediana', 1900, '🍟'],
               ['Para picar', 'Empanada de pino', 'Al horno', 1800, '🥟'],
-              ['Para picar', 'Sopaipillas', 'Tres unidades, con pebre', 1200, '🫓'],
+              ['Para picar', 'Churros', 'Tres unidades, con azúcar', 1500, '🥖'],
+              ['Para picar', 'Medialuna', 'Bollería del día', 900, '🥐'],
+              ['Café de grano', 'Café de grano', 'Mediano, 350 ml', 1900, '☕'],
+              ['Café de grano', 'Cortado', 'Mediano', 1800, '☕'],
+              ['Café de grano', 'Capuccino vainilla', 'Mediano', 2400, '☕'],
               ['Bebidas', 'Bebida en lata', '350 ml', 1200, '🥤'],
+              ['Bebidas', 'Bebida energética', '250 ml', 1900, '⚡'],
               ['Bebidas', 'Agua mineral', '500 ml', 1000, '💧'],
             ],
           },
@@ -73,15 +97,23 @@ const DATA = [
             prep: 15,
             capacity: 10,
             baes: true,
+            // Amarillo y negro de Duoc UC: el Casino es de la sede.
+            color: '#ffb81c',
+            color2: '#1f1f1f',
             products: [
               ['Almuerzos', 'Menú del día', 'Entrada, plato de fondo y postre', 4000, '🍛'],
               ['Almuerzos', 'Menú vegetariano', 'Entrada, plato de fondo y postre', 4000, '🥦'],
               ['Almuerzos', 'Charquicán con huevo', 'Con ensalada chilena', 3600, '🍳'],
               ['Almuerzos', 'Porotos con riendas', 'Con longaniza opcional', 3500, '🫘'],
+              ['Almuerzos', 'Pollo asado con arroz', 'Cuarto de pollo y ensalada', 3900, '🍗'],
+              ['Almuerzos', 'Lasaña boloñesa', 'Porción individual', 4200, '🍝'],
+              ['Colaciones', 'Sándwich de ave mayo', 'En pan de molde', 1900, '🥪'],
+              ['Colaciones', 'Yogur con cereal', 'Vaso individual', 1200, '🥣'],
               ['Colaciones', 'Fruta picada', 'Vaso individual', 1000, '🍓'],
               ['Colaciones', 'Kuchen de manzana', 'Trozo', 1400, '🥧'],
               ['Bebidas', 'Jugo en caja', '200 ml', 800, '🧃'],
               ['Bebidas', 'Té o café', '250 ml', 900, '🍵'],
+              ['Bebidas', 'Agua mineral', '500 ml', 900, '💧'],
             ],
           },
         ],
@@ -107,6 +139,8 @@ const DATA = [
             prep: 5,
             capacity: 8,
             baes: true,
+            color: '#7a1f3d',
+            color2: '#f2c14e',
             products: [
               ['Café', 'Espresso', 'Simple', 1500, '☕'],
               ['Café', 'Capuccino', '300 ml', 2400, '☕'],
@@ -133,12 +167,18 @@ const group = (id, name, required, multiple, choices) => ({
 const DEMO_OPTIONS = {
   'Café americano': [group('t', 'Tamaño', true, false, [['Mediano', 0], ['Grande', 400]])],
   Capuccino: [group('t', 'Tamaño', true, false, [['Mediano', 0], ['Grande', 500]])],
-  'Plato del día': [
-    group('a', 'Acompañamiento', true, false, [['Arroz', 0], ['Puré', 0], ['Ensalada extra', 400]]),
-    group('e', 'Extras', false, true, [['Pan amasado', 300], ['Postre', 700]]),
+  'Bubble tea de leche': [
+    group('t', 'Tamaño', true, false, [['Mediano', 0], ['Grande', 600]]),
+    group('e', 'Extras', false, true, [['Más perlas', 500], ['Crema de queso', 700]]),
   ],
-  Chacarero: [group('e', 'Agregados', false, true, [['Queso', 500], ['Palta', 700], ['Huevo', 400]])],
-  'Lomito italiano': [group('e', 'Agregados', false, true, [['Queso', 500], ['Ají verde', 0]])],
+  'Bubble tea de frutas': [
+    group('s', 'Sabor', true, false, [['Maracuyá', 0], ['Frutilla', 0], ['Mango', 0]]),
+    group('t', 'Tamaño', true, false, [['Mediano', 0], ['Grande', 600]]),
+  ],
+  'Latte de vainilla': [group('l', 'Leche', true, false, [['Entera', 0], ['Descremada', 0], ['Vegetal', 400]])],
+  'Completo italiano': [group('e', 'Agregados', false, true, [['Doble palta', 600], ['Queso', 500]])],
+  'Churrasco italiano': [group('e', 'Agregados', false, true, [['Queso', 500], ['Ají verde', 0], ['Huevo', 400]])],
+  'Café de grano': [group('l', 'Leche', false, false, [['Con leche', 200], ['Leche vegetal', 400]])],
 };
 
 // Comisión de ejemplo de la plataforma en la demo, en puntos base (800 = 8 %).
@@ -257,10 +297,25 @@ export function seedIfEmpty(db, { now = new Date(), history = true } = {}) {
       for (const s of campus.shops) {
         const shopId = db
           .prepare(
-            `INSERT INTO shops (campus_id, name, description, emoji, location, opens, closes, prep_minutes, slot_capacity, accepts_baes, status, created_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,'activo',?)`,
+            `INSERT INTO shops (campus_id, name, description, emoji, location, opens, closes, days, prep_minutes, slot_capacity, accepts_baes, color, color_2, status, created_at)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'activo',?)`,
           )
-          .run(campusId, s.name, s.description, s.emoji, s.location, s.opens, s.closes, s.prep, s.capacity, s.baes ? 1 : 0, nowIso)
+          .run(
+            campusId,
+            s.name,
+            s.description,
+            s.emoji,
+            s.location,
+            s.opens,
+            s.closes,
+            s.days ?? '0123456',
+            s.prep,
+            s.capacity,
+            s.baes ? 1 : 0,
+            s.color ?? '',
+            s.color2 ?? '',
+            nowIso,
+          )
           .lastInsertRowid;
         const insProduct = db.prepare(
           'INSERT INTO products (shop_id, category, name, description, price, emoji, options) VALUES (?,?,?,?,?,?,?)',
@@ -281,12 +336,13 @@ export function seedIfEmpty(db, { now = new Date(), history = true } = {}) {
   db.prepare("UPDATE shops SET pay_at_shop = 1 WHERE name = 'Casino'").run();
   // Ejemplos de promociones en horas tranquilas y tarjetas de sellos. Las define y las paga la plataforma, por eso
   // no superan su comisión.
-  db.prepare("UPDATE shops SET promos = ?, loyalty_every = 5, loyalty_max = 2500 WHERE name = 'Café Andén'").run(
+  db.prepare("UPDATE shops SET promos = ?, loyalty_every = 5, loyalty_max = 2500 WHERE name = 'Pepe Pug'").run(
     JSON.stringify([{ from: 660, to: 720, percent: 5 }, { from: 900, to: 990, percent: 8 }]),
   );
-  db.prepare("UPDATE shops SET promos = ?, loyalty_every = 6, loyalty_max = 2000 WHERE name = 'La Sanguchería'").run(
+  db.prepare("UPDATE shops SET promos = ?, loyalty_every = 6, loyalty_max = 2000 WHERE name = 'Pronto Copec'").run(
     JSON.stringify([{ from: 960, to: 1080, percent: 5 }]),
   );
+  db.prepare("UPDATE shops SET loyalty_every = 8, loyalty_max = 4000 WHERE name = 'Casino'").run();
   // El menú del día necesita más tiempo que el resto del Casino.
   db.prepare("UPDATE products SET prep_minutes = 25 WHERE name IN ('Menú del día', 'Menú vegetariano')").run();
   insUser.run(`Equipo ${BRAND}`, 'plataforma@torugo.cl', passHash, 'owner', null, null, null, nowIso);

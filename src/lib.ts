@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 export type ShopStatus = 'pendiente' | 'activo' | 'suspendido';
 export interface User {
   id: number;
@@ -59,6 +60,10 @@ export interface Shop {
   promos: Promo[];
   loyalty_every: number;
   loyalty_max: number;
+  /** Color principal del local (#rrggbb), o vacío para usar los de la app. Pinta su tarjeta de sellos. */
+  color: string;
+  /** Color de los sellos ganados (#rrggbb), o vacío. */
+  color_2: string;
   /** Días que atiende: dígitos de 0 (domingo) a 6 (sábado). */
   days: string;
   status: ShopStatus;
@@ -454,3 +459,33 @@ export const firstName = (name: string) => name.trim().split(/\s+/)[0];
 
 /** "15 % menos retirando entre 15:00 y 16:30" */
 export const promoText = (p: Promo) => `${p.percent} % menos retirando entre ${hhmm(p.from)} y ${hhmm(p.to)}`;
+
+/** Colores de la app para las tarjetas de sellos de los locales que no eligieron los suyos. */
+export const CARD_DEFAULT = { color: '#005bc1', color2: '#d3c995' };
+
+const luminance = (hex: string) => {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+const contrast = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+
+/** Texto legible sobre un color: blanco o casi negro, el que contraste más. */
+export function inkOn(hex: string) {
+  const l = luminance(hex);
+  return contrast(l, 1) >= contrast(l, luminance('#14171a')) ? '#ffffff' : '#14171a';
+}
+
+/** Variables CSS de la tarjeta de sellos de un local, con texto que siempre se lee sobre sus colores. */
+export function cardStyle(color?: string, color2?: string) {
+  const ok = (c?: string) => !!c && /^#[0-9a-f]{6}$/i.test(c);
+  const bg = ok(color) ? color! : CARD_DEFAULT.color;
+  const stamp = ok(color2) ? color2! : ok(color) ? inkOn(bg) : CARD_DEFAULT.color2;
+  const ink = inkOn(bg);
+  return {
+    '--card': bg,
+    '--card-ink': ink,
+    '--card-line': ink === '#ffffff' ? 'rgba(255, 255, 255, 0.5)' : 'rgba(20, 23, 26, 0.38)',
+    '--card-stamp': stamp,
+    '--card-stamp-ink': inkOn(stamp),
+  } as CSSProperties;
+}

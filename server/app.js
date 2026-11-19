@@ -1301,6 +1301,14 @@ export function createApp(
     return list;
   };
 
+  /** Color en formato #rrggbb, o vacío para usar los colores de la app. */
+  const hexColor = (v, label) => {
+    const c = String(v ?? '').trim().toLowerCase();
+    if (c === '') return '';
+    if (!/^#[0-9a-f]{6}$/.test(c)) fail(400, `${label} debe ser un color como #005bc1.`);
+    return c;
+  };
+
   const daysOfWeek = (v) => {
     const set = [...new Set(String(v))].filter((d) => /^[0-6]$/.test(d)).sort();
     if (set.length === 0) fail(400, 'Elige al menos un día de atención.');
@@ -1326,13 +1334,15 @@ export function createApp(
       days: b.days !== undefined ? daysOfWeek(b.days) : s.days,
       pay_at_shop: b.pay_at_shop !== undefined ? (b.pay_at_shop ? 1 : 0) : s.pay_at_shop,
       accepts_baes: b.accepts_baes !== undefined ? (b.accepts_baes ? 1 : 0) : s.accepts_baes,
+      color: b.color !== undefined ? hexColor(b.color, 'El color principal') : s.color,
+      color_2: b.color_2 !== undefined ? hexColor(b.color_2, 'El color de los sellos') : s.color_2,
       promos: s.promos,
       loyalty_every: s.loyalty_every,
       loyalty_max: s.loyalty_max,
     };
     if (next.closes <= next.opens) fail(400, 'La hora de cierre debe ser posterior a la de apertura.');
     db.prepare(
-      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?, pay_at_shop=?, accepts_baes=?, promos=?, loyalty_every=?, loyalty_max=?
+      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?, pay_at_shop=?, accepts_baes=?, color=?, color_2=?, promos=?, loyalty_every=?, loyalty_max=?
        WHERE id=?`,
     ).run(
       next.name,
@@ -1348,6 +1358,8 @@ export function createApp(
       next.days,
       next.pay_at_shop,
       next.accepts_baes,
+      next.color,
+      next.color_2,
       next.promos,
       next.loyalty_every,
       next.loyalty_max,

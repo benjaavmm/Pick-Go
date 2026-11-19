@@ -64,7 +64,7 @@ import {
 } from '../lib';
 import { BRAND } from '../brand';
 import { useApp, useLoad, useOrderEvents, useTick } from '../state';
-import { Empty, ErrorBox, Loading, Logo, ProductTile, Rating, Sheet, StarsInput, StatusPill, TopBar } from '../ui';
+import { Empty, ErrorBox, Loading, Logo, ProductTile, Rating, Sheet, StampCard, StarsInput, StatusPill, TopBar } from '../ui';
 import { AccountSettings } from './account';
 import { CampusSelect } from './auth';
 
@@ -510,29 +510,6 @@ function OptionsSheet({ product, onClose, onAdd }: { product: Product; onClose: 
   );
 }
 
-/** Tarjeta de sellos del estudiante en un local. */
-function LoyaltyCard({ card }: { card: Loyalty }) {
-  return (
-    <section className="loyalty" aria-label="Tarjeta de sellos">
-      <div className="loyalty-head">
-        <strong>{card.rewards > 0 ? `¡Tienes ${card.rewards === 1 ? 'un premio' : `${card.rewards} premios`}!` : 'Tarjeta de sellos'}</strong>
-        <span>
-          {card.rewards > 0
-            ? `Úsalo en tu próximo pedido: un producto gratis hasta ${money(card.max)}.`
-            : `Cada ${card.every} pedidos, un producto gratis hasta ${money(card.max)}.`}
-        </span>
-      </div>
-      <ol className="stamps" aria-label={`${card.stamps} de ${card.every} sellos`}>
-        {Array.from({ length: card.every }, (_, i) => (
-          <li key={i} className={i < card.stamps ? 'on' : ''}>
-            {i < card.stamps && <Check size={14} strokeWidth={3} />}
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
 export function ShopPage() {
   const { id } = useParams();
   const { cart, cartCount, cartTotal, addToCart, setQty } = useApp();
@@ -628,7 +605,7 @@ export function ShopPage() {
           <span>{shop.promos.map(promoText).join(' · ')}</span>
         </section>
       )}
-      {data.loyalty && <LoyaltyCard card={data.loyalty} />}
+      {data.loyalty && <StampCard shop={shop} card={data.loyalty} />}
 
       {products.length === 0 && <p className="muted center">Este local todavía no publica su menú.</p>}
       {categories.length > 1 && (

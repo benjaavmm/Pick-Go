@@ -182,7 +182,7 @@ export function Login() {
               <GraduationCap size={22} aria-hidden />
               Estudiante
             </button>
-            <button onClick={() => quick('cafe@torugo.cl')}>
+            <button onClick={() => quick('pepepug@torugo.cl')}>
               <Store size={22} aria-hidden />
               Local
             </button>

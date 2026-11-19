@@ -1,8 +1,8 @@
-import { ArrowLeft, Star, UtensilsCrossed, X } from 'lucide-react';
+import { ArrowLeft, Check, Star, UtensilsCrossed, X } from 'lucide-react';
 import { Component, useEffect, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { BRAND } from './brand';
-import { STATUS_LABEL, type Status } from './lib';
+import { cardStyle, money, STATUS_LABEL, type Loyalty, type Status } from './lib';
 
 export function Logo({ size = 'md' }: { size?: 'md' | 'lg' | 'xl' }) {
   return (
@@ -276,5 +276,41 @@ export function HeroArt({ className = '' }: { className?: string }) {
         <path className="art-cup-glyph" d="M168 143 h13 v7 a6.5 6.5 0 0 1 -13 0 Z M181 145 h2 a3 3 0 0 1 0 6 h-2" />
       </g>
     </svg>
+  );
+}
+
+/** Tarjeta de sellos de un local, pintada con los colores del local. */
+export function StampCard({
+  shop,
+  card,
+}: {
+  shop: { name: string; emoji: string; color?: string; color_2?: string };
+  card: Loyalty;
+}) {
+  return (
+    <section className="loyalty" style={cardStyle(shop.color, shop.color_2)} aria-label={`Tarjeta de sellos de ${shop.name}`}>
+      <div className="loyalty-top">
+        <span className="loyalty-emoji" aria-hidden>
+          {shop.emoji}
+        </span>
+        <span className="loyalty-shop">{shop.name}</span>
+        <span className="loyalty-tag">Tarjeta de sellos</span>
+      </div>
+      <div className="loyalty-head">
+        <strong>{card.rewards > 0 ? `¡Tienes ${card.rewards === 1 ? 'un premio' : `${card.rewards} premios`}!` : `${card.stamps} de ${card.every} sellos`}</strong>
+        <span>
+          {card.rewards > 0
+            ? `Úsalo en tu próximo pedido: un producto gratis hasta ${money(card.max)}.`
+            : `Cada ${card.every} pedidos, un producto gratis hasta ${money(card.max)}.`}
+        </span>
+      </div>
+      <ol className="stamps" aria-label={`${card.stamps} de ${card.every} sellos`}>
+        {Array.from({ length: card.every }, (_, i) => (
+          <li key={i} className={i < card.stamps ? 'on' : ''}>
+            {i < card.stamps && <Check size={16} strokeWidth={3} />}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

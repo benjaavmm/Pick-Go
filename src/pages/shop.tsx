@@ -28,6 +28,7 @@ import {
   ApiError,
   BAES,
   baesName,
+  CARD_DEFAULT,
   type BaesOperator,
   errorText,
   hhmm,
@@ -52,7 +53,7 @@ import {
 } from '../lib';
 import { BRAND } from '../brand';
 import { beep, useApp, useLoad, useOrderEvents, useTick } from '../state';
-import { BarChart, Empty, Kpi, Loading, Logo, ProductTile, Sheet } from '../ui';
+import { BarChart, Empty, Kpi, Loading, Logo, ProductTile, Sheet, StampCard } from '../ui';
 import { AccountSettings } from './account';
 
 export function ShopLayout() {
@@ -1286,6 +1287,54 @@ export function LoyaltyEditor({ shop, onSave }: { shop: Discounts; onSave: (ever
   );
 }
 
+/** Colores del local para su tarjeta de sellos, con una vista previa en vivo. */
+function CardColors({ shop, save }: { shop: Shop; save: (body: object, ok: string) => Promise<void> }) {
+  const [color, setColor] = useState(shop.color || CARD_DEFAULT.color);
+  const [color2, setColor2] = useState(shop.color_2 || CARD_DEFAULT.color2);
+  const changed = color !== (shop.color || CARD_DEFAULT.color) || color2 !== (shop.color_2 || CARD_DEFAULT.color2);
+  const preview = { every: shop.loyalty_every || 5, max: shop.loyalty_max || 2000, stamps: Math.min(3, (shop.loyalty_every || 5) - 1), rewards: 0 };
+  return (
+    <section className="card form card-colors">
+      <h2>Colores de tu tarjeta de sellos</h2>
+      <p className="muted">Usa los colores de tu marca: así los estudiantes reconocen tu tarjeta al tiro.</p>
+      <StampCard shop={{ name: shop.name, emoji: shop.emoji, color, color_2: color2 }} card={preview} />
+      <div className="form-row">
+        <label className="grow color-field">
+          Color principal
+          <span>
+            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+            <code>{color}</code>
+          </span>
+        </label>
+        <label className="grow color-field">
+          Color de los sellos
+          <span>
+            <input type="color" value={color2} onChange={(e) => setColor2(e.target.value)} />
+            <code>{color2}</code>
+          </span>
+        </label>
+      </div>
+      {!shop.loyalty_every && <small className="muted">{BRAND} todavía no activa la tarjeta de sellos en tu local: así se verá cuando la active.</small>}
+      <div className="form-row">
+        <button
+          type="button"
+          className="btn btn-soft grow"
+          onClick={() => {
+            setColor(CARD_DEFAULT.color);
+            setColor2(CARD_DEFAULT.color2);
+            void save({ color: '', color_2: '' }, `Tarjeta con los colores de ${BRAND}`);
+          }}
+        >
+          Usar los de {BRAND}
+        </button>
+        <button type="button" className="btn btn-primary grow" disabled={!changed} onClick={() => void save({ color, color_2: color2 }, 'Colores guardados')}>
+          Guardar colores
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function ShopSettings() {
   const { toast, payments } = useApp();
   const { data: shop, setData } = useLoad(() => api<Shop>('/shop/me'), []);
@@ -1503,6 +1552,8 @@ export function ShopSettings() {
         </label>
         <button className="btn btn-primary btn-block">Guardar ajustes</button>
       </form>
+
+      <CardColors shop={shop} save={patch} />
 
       <AccountSettings notifyText="Recibe un aviso cada vez que entra un pedido, aunque tengas el panel cerrado." />
     </main>

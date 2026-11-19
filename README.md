@@ -38,6 +38,7 @@ Lo que la distingue:
 - Seguimiento en vivo y aviso cuando el pedido está listo, también con la app cerrada.
 - Código de retiro con QR, historial, «pedir lo de siempre» y calificación del local.
 - Promociones de ToruGo por hora de retiro, tarjeta de sellos con premio y favoritos.
+- Cada tarjeta de sellos lleva los colores del local, que el propio local elige en sus ajustes.
 - Perfil con cambio de sede, apariencia clara u oscura, ayuda, descarga de datos y eliminación de cuenta.
 
 **Locales**
@@ -95,8 +96,8 @@ La pantalla de ingreso tiene botones para entrar con las cuentas de prueba. Toda
 | Rol | Correo |
 | --- | --- |
 | Estudiante (con beca y recreos guardados) | `estudiante@torugo.cl` |
-| Local (Café Andén, recibe la beca) | `cafe@torugo.cl` |
-| Local (La Sanguchería) | `sangucheria@torugo.cl` |
+| Local (Pepe Pug, recibe la beca) | `pepepug@torugo.cl` |
+| Local (Pronto Copec) | `copec@torugo.cl` |
 | Local (Casino, recibe la beca) | `casino@torugo.cl` |
 | Institución (Duoc UC) | `admin@torugo.cl` |
 | Plataforma | `plataforma@torugo.cl` |

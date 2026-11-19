@@ -3361,40 +3361,113 @@ th.num {
   border: 2px solid var(--outline);
   font-weight: 800;
 }
-.loyalty {
-  display: grid;
+.color-field span {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  padding: 14px 16px;
-  border-radius: var(--r);
+}
+.color-field input[type='color'] {
+  width: 52px;
+  height: 44px;
+  padding: 3px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
   background: var(--surface);
-  box-shadow: var(--shadow);
+  cursor: pointer;
+  flex: none;
+}
+.color-field code {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--ink-2);
+}
+/* Tarjeta de sellos: con los colores de cada local, como la tarjeta de cartón que te timbran en el mesón. */
+.loyalty {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px 18px;
+  border-radius: var(--r);
+  background-color: var(--card);
+  /* Un brillo suave y un círculo de fondo para que se sienta como una tarjeta. */
+  background-image:
+    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.22), transparent 46%),
+    radial-gradient(circle at 0% 120%, rgba(0, 0, 0, 0.16), transparent 50%);
+  color: var(--card-ink);
+  box-shadow: var(--shadow-up);
+}
+.loyalty-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.loyalty-emoji {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--card-stamp);
+  font-size: 1.1rem;
+  flex: none;
+}
+.loyalty-shop {
+  font-family: var(--font-italic);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loyalty-tag {
+  margin-left: auto;
+  flex: none;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+/* En pantallas muy angostas, el nombre del local tiene prioridad sobre la etiqueta. */
+@media (max-width: 380px) {
+  .loyalty-tag {
+    display: none;
+  }
 }
 .loyalty-head {
   display: grid;
   gap: 2px;
 }
+.loyalty-head strong {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+}
 .loyalty-head span {
-  color: var(--ink-2);
   font-size: 0.9rem;
+  opacity: 0.88;
 }
 .stamps {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 .stamps li {
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  border: 2px dashed var(--line);
+  border: 2px dashed var(--card-line, var(--line));
   display: grid;
   place-items: center;
 }
-/* Los sellos ganados van en amarillo pálido: es lo que se celebra. */
+/* Los sellos ganados van en el color secundario del local. */
 .stamps li.on {
-  border: 2px solid var(--outline);
-  background: var(--sun);
-  color: var(--on-sun);
+  border: 2px solid var(--card-line, transparent);
+  background: var(--card-stamp, var(--sun));
+  color: var(--card-stamp-ink, var(--on-sun));
 }
 .fav {
   flex: none;

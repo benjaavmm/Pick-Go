@@ -58,7 +58,7 @@ async function login(email) {
   return c;
 }
 
-const anden = () => db.prepare("SELECT * FROM shops WHERE name = 'Café Andén'").get();
+const pepePug = () => db.prepare("SELECT * FROM shops WHERE name = 'Pepe Pug'").get();
 const productOf = (shopId, name) => db.prepare('SELECT * FROM products WHERE shop_id = ? AND name = ?').get(shopId, name);
 
 test('la hora de Chile y las franjas respetan la anticipación y el cierre', () => {
@@ -88,9 +88,9 @@ test('registro valida los datos y no permite correos repetidos', async () => {
 
 test('flujo completo: pedir, preparar, avisar y retirar con código', async () => {
   const student = await login('estudiante@torugo.cl');
-  const shopUser = await login('cafe@torugo.cl');
-  const shop = anden();
-  const menu = productOf(shop.id, 'Plato del día');
+  const shopUser = await login('pepepug@torugo.cl');
+  const shop = pepePug();
+  const menu = productOf(shop.id, 'Bubble tea de leche');
   const agua = productOf(shop.id, 'Agua mineral');
 
   const slots = (await student('GET', `/api/shops/${shop.id}/slots`)).body;
@@ -103,18 +103,18 @@ test('flujo completo: pedir, preparar, avisar y retirar con código', async () =
     note: 'Sin mayonesa',
     // El precio que mande el cliente se ignora: el total se calcula con los precios de la base.
     items: [
-      { productId: menu.id, qty: 2, price: 1, choices: ['a1', 'e2'] },
+      { productId: menu.id, qty: 2, price: 1, choices: ['t1', 'e2'] },
       { productId: agua.id, qty: 1 },
     ],
   });
   assert.equal(created.status, 201);
   const order = created.body;
-  // Plato del día $4.300 + postre $700, dos veces, más el agua.
-  assert.equal(order.total, (4300 + 700) * 2 + 1000);
-  assert.deepEqual(order.items[0].options.map((o) => o.name), ['Arroz', 'Postre']);
+  // Bubble tea $3.200 + crema de queso $700, dos veces, más el agua.
+  assert.equal(order.total, (3200 + 700) * 2 + 1000);
+  assert.deepEqual(order.items[0].options.map((o) => o.name), ['Mediano', 'Crema de queso']);
   assert.equal(order.payment_method, 'local');
   // Falta la opción obligatoria, se eligen dos donde va una, o se manda una que no existe.
-  for (const choices of [[], ['a1', 'a2'], ['a1', 'zz']]) {
+  for (const choices of [[], ['t1', 't2'], ['t1', 'zz']]) {
     const bad = await student('POST', '/api/orders', { shopId: shop.id, slot: slots[1].slot, items: [{ productId: menu.id, qty: 1, choices }] });
     assert.equal(bad.status >= 400 && bad.status < 500, true, JSON.stringify(choices));
   }
@@ -130,7 +130,7 @@ test('flujo completo: pedir, preparar, avisar y retirar con código', async () =
 
   // Un estudiante no puede usar el panel del local, y un local no puede tocar pedidos de otro.
   assert.equal((await student('GET', '/api/shop/orders')).status, 403);
-  const other = await login('sangucheria@torugo.cl');
+  const other = await login('copec@torugo.cl');
   assert.equal((await other('POST', `/api/shop/orders/${order.id}/status`, { status: 'listo' })).status, 404);
   assert.equal((await other('POST', '/api/shop/pickup', { code: order.code })).status, 404);
 
@@ -154,7 +154,7 @@ test('flujo completo: pedir, preparar, avisar y retirar con código', async () =
 });
 
 test('cada franja tiene cupo y cancelar lo libera', async () => {
-  const shop = anden();
+  const shop = pepePug();
   const item = [{ productId: productOf(shop.id, 'Café americano').id, qty: 1, choices: ['t1'] }];
   const campus = db.prepare('SELECT id FROM campuses LIMIT 1').get().id;
   const slot = '2026-11-13T13:00';
@@ -180,8 +180,8 @@ test('cada franja tiene cupo y cancelar lo libera', async () => {
 
 test('no se puede pedir para una hora pasada, productos agotados ni locales en pausa', async () => {
   const student = await login('estudiante@torugo.cl');
-  const shopUser = await login('cafe@torugo.cl');
-  const shop = anden();
+  const shopUser = await login('pepepug@torugo.cl');
+  const shop = pepePug();
   const cafe = productOf(shop.id, 'Café americano');
   const good = { shopId: shop.id, slot: '2026-11-13T14:00', items: [{ productId: cafe.id, qty: 1, choices: ['t1'] }] };
 
@@ -189,7 +189,7 @@ test('no se puede pedir para una hora pasada, productos agotados ni locales en p
   assert.equal((await student('POST', '/api/orders', { ...good, slot: '2026-11-13T12:05' })).status, 409);
   assert.equal((await student('POST', '/api/orders', { ...good, items: [] })).status, 400);
   assert.equal((await student('POST', '/api/orders', { ...good, items: [{ productId: cafe.id, qty: 0 }] })).status, 400);
-  const ajeno = productOf(db.prepare("SELECT id FROM shops WHERE name = 'La Sanguchería'").get().id, 'Papas fritas');
+  const ajeno = productOf(db.prepare("SELECT id FROM shops WHERE name = 'Pronto Copec'").get().id, 'Papas fritas');
   assert.equal((await student('POST', '/api/orders', { ...good, items: [{ productId: ajeno.id, qty: 1 }] })).status, 409);
 
   await shopUser('PATCH', `/api/shop/products/${cafe.id}`, { available: false });
@@ -374,7 +374,7 @@ test('las suscripciones push solo aceptan servicios de notificación conocidos',
 });
 
 test('fotos y opciones de productos: solo imágenes reales y solo del propio local', async () => {
-  const shopUser = await login('sangucheria@torugo.cl');
+  const shopUser = await login('copec@torugo.cl');
   const other = await login('casino@torugo.cl');
   const upload = async (c, bytes, type = 'image/png') => {
     const login2 = await c('GET', '/api/me');
@@ -460,8 +460,8 @@ test('la plataforma crea instituciones y recupera accesos; nadie más puede', as
 });
 
 test('aceptación automática: el pedido entra directo a preparación y se avisa al estudiante', async () => {
-  const shopUser = await login('sangucheria@torugo.cl');
-  const shop = db.prepare("SELECT * FROM shops WHERE name = 'La Sanguchería'").get();
+  const shopUser = await login('copec@torugo.cl');
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Pronto Copec'").get();
   assert.equal((await shopUser('PATCH', '/api/shop/me', { auto_accept: true })).body.auto_accept, true);
   const c = client();
   const campus = db.prepare('SELECT id FROM campuses LIMIT 1').get().id;
@@ -590,9 +590,9 @@ test('el local no ve el código de retiro y tiene un tope de intentos por pedido
 });
 
 test('promociones por horario, tarjeta de sellos y precio calculado por el servidor', async () => {
-  const shopUser = await login('sangucheria@torugo.cl');
+  const shopUser = await login('copec@torugo.cl');
   const owner = await login('plataforma@torugo.cl');
-  const shop = db.prepare("SELECT * FROM shops WHERE name = 'La Sanguchería'").get();
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Pronto Copec'").get();
   const papas = productOf(shop.id, 'Papas fritas'); // $1.900
   const empanada = productOf(shop.id, 'Empanada de pino'); // $1.800
   // Las promociones y los premios los define la plataforma, no el local.
@@ -682,7 +682,7 @@ test('tiempo de preparación por producto y favoritos', async () => {
 
 test('beca Junaeb: operador por sede, pago al retirar y cobro confirmado por el local', async () => {
   const shop = db.prepare("SELECT * FROM shops WHERE name = 'Casino'").get();
-  const noBaes = db.prepare("SELECT * FROM shops WHERE name = 'La Sanguchería'").get();
+  const noBaes = db.prepare("SELECT * FROM shops WHERE name = 'Pronto Copec'").get();
   const shopUser = await login('casino@torugo.cl');
   const student = await login('estudiante@torugo.cl');
   // Viña del Mar queda con Edenred; una sede en Santiago, con Pluxee.
@@ -773,4 +773,19 @@ test('recreos del estudiante: se validan y se guardan ordenados', async () => {
   // Un local o una institución no tienen estos datos.
   const shopMe = (await (await login('casino@torugo.cl'))('GET', '/api/me')).body;
   assert.equal('breaks' in shopMe || 'baes' in shopMe, false);
+});
+
+test('cada local elige los colores de su tarjeta de sellos', async () => {
+  const shopUser = await login('copec@torugo.cl');
+  const student = await login('estudiante@torugo.cl');
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Pronto Copec'").get();
+  assert.deepEqual([shop.color, shop.color_2], ['#d71920', '#0b3b8c']);
+  for (const color of ['rojo', '#fff', '#12345g', 'url(x)']) assert.equal((await shopUser('PATCH', '/api/shop/me', { color })).status, 400, color);
+  let r = await shopUser('PATCH', '/api/shop/me', { color: '#00A859', color_2: ' #FFD100 ' });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.body.color, r.body.color_2], ['#00a859', '#ffd100']);
+  assert.equal((await student('GET', `/api/shops/${shop.id}`)).body.shop.color, '#00a859');
+  // Vacío vuelve a los colores de la app.
+  r = await shopUser('PATCH', '/api/shop/me', { color: '', color_2: '' });
+  assert.deepEqual([r.body.color, r.body.color_2], ['', '']);
 });

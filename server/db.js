@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { BRAND } from './brand.js';
 import { operatorForCity } from './baes.js';
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS shops (
   promos TEXT NOT NULL DEFAULT '[]',           -- descuentos por hora de retiro (JSON): [{from, to, percent}]
   loyalty_every INTEGER NOT NULL DEFAULT 0,    -- tarjeta de sellos: un premio cada N pedidos entregados (0 = apagada)
   loyalty_max INTEGER NOT NULL DEFAULT 0,      -- valor máximo del producto de regalo
+  color TEXT NOT NULL DEFAULT '',              -- color principal del local (#rrggbb): fondo de su tarjeta de sellos
+  color_2 TEXT NOT NULL DEFAULT '',            -- color secundario: los sellos ganados
   -- La institución aprueba cada local antes de que aparezca para los estudiantes.
   status TEXT NOT NULL DEFAULT 'pendiente',
   created_at TEXT NOT NULL DEFAULT ''
@@ -222,6 +224,9 @@ const MIGRATIONS = {
   // con funded_discount = 0: esos descuentos los había puesto el local.
   8: `ALTER TABLE orders ADD COLUMN funded_discount INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE settlements ADD COLUMN discounts INTEGER NOT NULL DEFAULT 0;`,
+  // Colores propios de cada local para su tarjeta de sellos. Vacíos = los colores de la app.
+  9: `ALTER TABLE shops ADD COLUMN color TEXT NOT NULL DEFAULT '';
+      ALTER TABLE shops ADD COLUMN color_2 TEXT NOT NULL DEFAULT '';`,
 };
 const FIRST_MIGRATABLE = 3;
 
