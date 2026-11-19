@@ -56,7 +56,7 @@ export function userFromToken(db, token) {
 // Contraseñas que aparecen en todas las listas de filtraciones: no se aceptan aunque cumplan el largo.
 const COMMON = new Set([
   '12345678', '123456789', '1234567890', 'password', 'password1', 'contraseña', 'contrasena', 'qwertyuiop',
-  'qwerty123', '11111111', '00000000', 'abcd1234', 'iloveyou', 'pickgo123', 'gobite123', 'duocuc123', 'estudiante',
+  'qwerty123', '11111111', '00000000', 'abcd1234', 'iloveyou', 'pickgo123', 'gobite123', 'torugo123', 'duocuc123', 'estudiante',
 ]);
 
 /** Devuelve el motivo por el que la contraseña no sirve, o null si es aceptable. */

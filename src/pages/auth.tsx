@@ -4,17 +4,18 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, errorText, type Campus, type User } from '../lib';
 import { BRAND } from '../brand';
 import { useApp, useLoad } from '../state';
-import { Logo, TopBar } from '../ui';
+import { HeroArt, Logo, TopBar } from '../ui';
 
 function AuthShell({ children, hero }: { children: ReactNode; hero?: ReactNode }) {
   return (
     <div className="auth">
       <section className="auth-hero">
         <Logo size="lg" />
+        {!hero && <HeroArt />}
         {hero ?? (
           <>
             <h1 className="display">
-              Pide entre clases.
+              <span className="hl">Pide entre clases.</span>
               <br />
               <mark>Retira sin fila.</mark>
             </h1>
@@ -127,7 +128,7 @@ export function Login() {
 
   const quick = async (mail: string) => {
     try {
-      setUser(await api<User>('/auth/login', 'POST', { email: mail, password: 'gobite123' }));
+      setUser(await api<User>('/auth/login', 'POST', { email: mail, password: 'torugo123' }));
     } catch (err) {
       setDemoError(errorText(err));
     }
@@ -177,19 +178,19 @@ export function Login() {
           <h2>Explora la demo</h2>
           <p>Entra con una cuenta de prueba. Abre dos ventanas para ver los avisos en vivo entre estudiante y local.</p>
           <div className="demo-grid">
-            <button onClick={() => quick('estudiante@gobite.cl')}>
+            <button onClick={() => quick('estudiante@torugo.cl')}>
               <GraduationCap size={22} aria-hidden />
               Estudiante
             </button>
-            <button onClick={() => quick('cafe@gobite.cl')}>
+            <button onClick={() => quick('cafe@torugo.cl')}>
               <Store size={22} aria-hidden />
               Local
             </button>
-            <button onClick={() => quick('admin@gobite.cl')}>
+            <button onClick={() => quick('admin@torugo.cl')}>
               <Building2 size={22} aria-hidden />
               Institución
             </button>
-            <button onClick={() => quick('plataforma@gobite.cl')}>
+            <button onClick={() => quick('plataforma@torugo.cl')}>
               <ShieldCheck size={22} aria-hidden />
               Plataforma
             </button>

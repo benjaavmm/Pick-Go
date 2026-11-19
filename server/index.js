@@ -28,14 +28,14 @@ function open() {
   }
 }
 
-// GOBITE_DEMO=0 arranca sin datos ni cuentas de demostración.
-const demo = process.env.GOBITE_DEMO !== '0';
+// TORUGO_DEMO=0 arranca sin datos ni cuentas de demostración.
+const demo = process.env.TORUGO_DEMO !== '0';
 const db = open();
 if (demo && seedIfEmpty(db)) console.log('Base de datos creada con datos de demostración.');
 
 // Cuenta de quien opera la plataforma: se crea al arrancar a partir de dos variables de entorno.
-const ownerEmail = process.env.GOBITE_OWNER_EMAIL?.trim().toLowerCase();
-const ownerPassword = process.env.GOBITE_OWNER_PASSWORD;
+const ownerEmail = process.env.TORUGO_OWNER_EMAIL?.trim().toLowerCase();
+const ownerPassword = process.env.TORUGO_OWNER_PASSWORD;
 if (ownerEmail && ownerPassword) {
   const problem = passwordProblem(ownerPassword, ownerEmail);
   if (problem) console.warn(`No se creó la cuenta de plataforma: ${problem}`);
@@ -62,7 +62,7 @@ function backup() {
     const day = (f) => f.slice(-13);
     const old = fs
       .readdirSync(backupDir)
-      .filter((f) => /^(gobite|pickgo)-\d{4}-\d{2}-\d{2}\.db$/.test(f))
+      .filter((f) => /^(torugo|gobite|pickgo)-\d{4}-\d{2}-\d{2}\.db$/.test(f))
       .sort((a, b) => day(a).localeCompare(day(b)))
       .slice(0, -7);
     for (const f of old) fs.rmSync(path.join(backupDir, f));
@@ -78,14 +78,14 @@ setInterval(() => purgeExpiredSessions(db), 3600_000).unref();
 
 const port = Number(process.env.PORT ?? 3001);
 // Cobro en la app: con datos de demostración, por defecto en modo simulado.
-const payments = createPayments({ ...process.env, GOBITE_PAYMENTS: process.env.GOBITE_PAYMENTS ?? (demo ? 'simulado' : '') });
+const payments = createPayments({ ...process.env, TORUGO_PAYMENTS: process.env.TORUGO_PAYMENTS ?? (demo ? 'simulado' : '') });
 console.log(
   payments
     ? `Pagos en la app: ${payments.mode === 'simulado' ? 'modo de prueba (no se cobra dinero real)' : 'Mercado Pago'}.`
     : 'Pagos en la app: desactivados (todo se paga en el local).',
 );
 const mail = createMailer();
-console.log(mail ? 'Envío de correos: activado.' : 'Envío de correos: desactivado (faltan GOBITE_SMTP_URL, GOBITE_MAIL_FROM o GOBITE_PUBLIC_URL).');
+console.log(mail ? 'Envío de correos: activado.' : 'Envío de correos: desactivado (faltan TORUGO_SMTP_URL, TORUGO_MAIL_FROM o TORUGO_PUBLIC_URL).');
 createApp(db, { demo, distDir: path.join(root, 'dist'), push: createPush(db), mail, payments }).listen(port, () => {
   console.log(`${BRAND} escuchando en http://localhost:${port}`);
 });

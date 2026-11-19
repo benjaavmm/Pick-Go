@@ -1,14 +1,14 @@
 {
   "id": "/",
-  "name": "GoBite",
-  "short_name": "GoBite",
+  "name": "ToruGo",
+  "short_name": "ToruGo",
   "description": "Pide entre clases y retira sin fila: la hora de retiro según tus recreos.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#fcfaf5",
-  "theme_color": "#ffb224",
+  "background_color": "#f5f8fc",
+  "theme_color": "#eaf2fc",
   "lang": "es-CL",
   "categories": [
     "food",

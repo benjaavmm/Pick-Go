@@ -147,8 +147,8 @@ function Scanner({ onCode, onClose }: { onCode: (code: string) => void; onClose:
             ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
             const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const text = jsQR(img.data, img.width, img.height)?.data.trim().toUpperCase();
-            // GB: códigos actuales; PG: pedidos hechos antes del cambio de nombre.
-            if (text && /^(GB|PG)[A-Z0-9]{4,8}$/.test(text)) {
+            // TG: códigos actuales; GB y PG: pedidos hechos con los nombres anteriores de la app.
+            if (text && /^(TG|GB|PG)[A-Z0-9]{4,8}$/.test(text)) {
               stopped = true;
               navigator.vibrate?.(80);
               return found.current(text);
@@ -281,7 +281,7 @@ function DeliverSheet({ o, onClose, onDeliver }: { o: Order; onClose: () => void
             className="code-input"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="GB····"
+            placeholder="TG····"
             maxLength={10}
             autoComplete="off"
             autoCapitalize="characters"
@@ -461,7 +461,7 @@ export function ShopOrders() {
   const [rejecting, setRejecting] = useState<Order | null>(null);
   const [autoPrint, setAutoPrint] = useState(() => {
     try {
-      return localStorage.getItem('gobite.autoprint') === '1';
+      return localStorage.getItem('torugo.autoprint') === '1';
     } catch {
       return false;
     }
@@ -470,7 +470,7 @@ export function ShopOrders() {
     const v = !autoPrint;
     setAutoPrint(v);
     try {
-      localStorage.setItem('gobite.autoprint', v ? '1' : '0');
+      localStorage.setItem('torugo.autoprint', v ? '1' : '0');
     } catch {
       /* almacenamiento no disponible */
     }
@@ -538,7 +538,7 @@ export function ShopOrders() {
               id="pickup-code"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="GB····"
+              placeholder="TG····"
               maxLength={10}
               autoComplete="off"
               autoCapitalize="characters"

@@ -6,11 +6,11 @@ import { STATUS_LABEL, type Status } from './lib';
 
 export function Logo({ size = 'md' }: { size?: 'md' | 'lg' | 'xl' }) {
   return (
-    // Logo provisorio: solo el nombre, hasta tener un logo definitivo.
+    // Logo de palabra: «Toru» en azul negro y «Go» en azul vivido.
     <span className={`logo logo-${size}`} aria-label={BRAND}>
       <span aria-hidden>
-        <span className="go">{BRAND.slice(0, 2)}</span>
-        {BRAND.slice(2)}
+        {BRAND.slice(0, -2)}
+        <span className="go">{BRAND.slice(-2)}</span>
       </span>
     </span>
   );
@@ -222,8 +222,9 @@ export function Splash() {
         <ellipse className="grab-shadow" cx="150" cy="165" rx="52" ry="6" />
         <g className="grab-bag">
           <path className="grab-line" d="M128 86 C128 46 172 46 172 86" />
-          <path className="grab-lime" d="M108 84 H192 L186 152 a10 10 0 0 1 -10 9 H124 a10 10 0 0 1 -10 -9 Z" />
-          <path className="grab-check" d="M136 122 l10 10 l19 -22" />
+          <path className="grab-paper" d="M108 84 H192 L186 152 a10 10 0 0 1 -10 9 H124 a10 10 0 0 1 -10 -9 Z" />
+          <rect className="grab-badge" x="131" y="104" width="38" height="38" rx="11" />
+          <path className="grab-check" d="M141 123 l7 7 l13 -15" />
         </g>
         <g className="grab-hand">
           <rect className="grab-ink" x="-60" y="38" width="172" height="30" rx="15" />
@@ -239,5 +240,41 @@ export function Splash() {
         <i>.</i>
       </p>
     </div>
+  );
+}
+
+/** Ilustración de la portada: la bolsa de papel y el café listos para llevar, con líneas de movimiento. */
+export function HeroArt({ className = '' }: { className?: string }) {
+  return (
+    <svg className={`hero-art ${className}`} viewBox="0 0 240 210" aria-hidden>
+      <defs>
+        <pattern id="hero-dots" width="9" height="9" patternUnits="userSpaceOnUse">
+          <circle className="art-dot" cx="4.5" cy="4.5" r="2" />
+        </pattern>
+        <pattern id="hero-dots-sun" width="9" height="9" patternUnits="userSpaceOnUse">
+          <circle className="art-dot-sun" cx="4.5" cy="4.5" r="2.2" />
+        </pattern>
+      </defs>
+      <circle cx="196" cy="54" r="40" fill="url(#hero-dots)" />
+      <circle cx="40" cy="176" r="30" fill="url(#hero-dots-sun)" />
+      <path className="art-motion" d="M22 64 C8 96 9 138 26 170" />
+      <path className="art-motion art-motion-2" d="M8 98 C2 116 3 132 10 148" />
+      <path className="art-motion" d="M172 22 C196 14 220 26 230 48" />
+      <g className="art-bag">
+        <path className="art-handle" d="M74 74 C74 44 116 44 116 74" />
+        <path className="art-paper" d="M44 72 H146 L152 188 a9 9 0 0 1 -9 9 H47 a9 9 0 0 1 -9 -9 Z" />
+        <path className="art-fold" d="M44 72 H146 L147 88 H43 Z" />
+        <rect className="art-badge" x="70" y="114" width="50" height="50" rx="14" />
+        <path className="art-glyph" d="M84 132 H106 L104 152 H86 Z M89 132 v-3 a6 6 0 0 1 12 0 v3" />
+      </g>
+      <g className="art-cup">
+        <path className="art-steam" d="M168 76 c-7 -8 7 -14 0 -23 M184 76 c-7 -8 7 -14 0 -23" />
+        <rect className="art-lid-top" x="150" y="84" width="52" height="11" rx="5.5" />
+        <rect className="art-lid" x="142" y="93" width="68" height="15" rx="7" />
+        <path className="art-cup-body" d="M147 108 H205 L198 192 a9 9 0 0 1 -9 8 H163 a9 9 0 0 1 -9 -8 Z" />
+        <circle className="art-cup-seal" cx="176" cy="150" r="17" />
+        <path className="art-cup-glyph" d="M168 143 h13 v7 a6.5 6.5 0 0 1 -13 0 Z M181 145 h2 a3 3 0 0 1 0 6 h-2" />
+      </g>
+    </svg>
   );
 }

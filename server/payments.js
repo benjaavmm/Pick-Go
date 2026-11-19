@@ -1,13 +1,13 @@
 /**
- * Cobro en la app. Dos modos, elegidos con GOBITE_PAYMENTS:
+ * Cobro en la app. Dos modos, elegidos con TORUGO_PAYMENTS:
  *
  *  - 'simulado'    Marcha blanca: el flujo completo funciona, pero el "pago" se aprueba o rechaza en una pantalla
  *                  de prueba de la propia app. No se mueve dinero.
- *  - 'mercadopago' Cobro real con Mercado Pago Checkout Pro (API de Orders). Requiere GOBITE_MP_ACCESS_TOKEN y
- *                  GOBITE_PUBLIC_URL.
+ *  - 'mercadopago' Cobro real con Mercado Pago Checkout Pro (API de Orders). Requiere TORUGO_MP_ACCESS_TOKEN y
+ *                  TORUGO_PUBLIC_URL.
  *                  Con las credenciales de prueba de Mercado Pago se paga con tarjetas de prueba.
  *
- * Sin GOBITE_PAYMENTS no hay cobro en la app y todos los pedidos se pagan en el local.
+ * Sin TORUGO_PAYMENTS no hay cobro en la app y todos los pedidos se pagan en el local.
  *
  * El dinero entra a la cuenta de quien opera la plataforma; la app calcula la comisión de cada pedido y lo que hay
  * que transferir a cada local (ver "Pagos" en el panel de la plataforma).
@@ -17,19 +17,19 @@ import crypto from 'node:crypto';
 export const CHECKOUT_MINUTES = 15;
 
 export function createPayments(env = process.env, { apiBase = 'https://api.mercadopago.com', fetchImpl = fetch } = {}) {
-  const mode = env.GOBITE_PAYMENTS;
+  const mode = env.TORUGO_PAYMENTS;
   if (!mode) return null;
   if (mode === 'simulado') return simulated();
-  if (mode !== 'mercadopago') throw new Error(`GOBITE_PAYMENTS no reconoce "${mode}": usa simulado o mercadopago.`);
-  const token = env.GOBITE_MP_ACCESS_TOKEN;
+  if (mode !== 'mercadopago') throw new Error(`TORUGO_PAYMENTS no reconoce "${mode}": usa simulado o mercadopago.`);
+  const token = env.TORUGO_MP_ACCESS_TOKEN;
   let publicUrl;
   try {
-    publicUrl = new URL(env.GOBITE_PUBLIC_URL ?? '');
+    publicUrl = new URL(env.TORUGO_PUBLIC_URL ?? '');
   } catch {
     publicUrl = null;
   }
-  if (!token || !publicUrl) throw new Error('Para cobrar con Mercado Pago define GOBITE_MP_ACCESS_TOKEN y GOBITE_PUBLIC_URL.');
-  return mercadoPago({ token, publicUrl, apiBase, fetchImpl, webhookSecret: env.GOBITE_MP_WEBHOOK_SECRET });
+  if (!token || !publicUrl) throw new Error('Para cobrar con Mercado Pago define TORUGO_MP_ACCESS_TOKEN y TORUGO_PUBLIC_URL.');
+  return mercadoPago({ token, publicUrl, apiBase, fetchImpl, webhookSecret: env.TORUGO_MP_WEBHOOK_SECRET });
 }
 
 function simulated() {
@@ -113,12 +113,12 @@ function mercadoPago({ token, publicUrl, apiBase, fetchImpl, webhookSecret }) {
           expiration_time: `PT${CHECKOUT_MINUTES}M`,
           items: [{ title: `Pedido ${order.code} · ${order.shop_name}`, unit_price: String(order.total), quantity: 1, external_code: order.code }],
           config: {
-            statement_descriptor: 'GOBITE',
+            statement_descriptor: 'TORUGO',
             payment_method: { max_installments: 1 },
             online: { success_url: back, failure_url: back, pending_url: back, auto_return: 'approved' },
           },
         },
-        { 'X-Idempotency-Key': `gobite-${order.id}-${order.code}-${Date.now()}` },
+        { 'X-Idempotency-Key': `torugo-${order.id}-${order.code}-${Date.now()}` },
       );
       if (!created?.checkout_url) throw new Error('Mercado Pago no devolvió el enlace de pago.');
       return { url: created.checkout_url, ref: String(created.id) };
@@ -138,7 +138,7 @@ function mercadoPago({ token, publicUrl, apiBase, fetchImpl, webhookSecret }) {
       return { ok: true, ref: String(r?.id ?? ref) };
     },
     /**
-     * Verifica la firma de una notificación (cabecera x-signature) si se configuró GOBITE_MP_WEBHOOK_SECRET.
+     * Verifica la firma de una notificación (cabecera x-signature) si se configuró TORUGO_MP_WEBHOOK_SECRET.
      * Aunque la firma falte o no se configure, la app nunca confía en el contenido de la notificación:
      * siempre vuelve a consultar la order a Mercado Pago antes de darla por pagada.
      */

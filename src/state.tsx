@@ -25,14 +25,16 @@ const EMPTY_CART: Cart = { shopId: null, shopName: '', lines: [] };
 // Tras el cambio de nombre, lo que el navegador guardaba con el prefijo anterior pasa al nuevo una sola vez.
 try {
   for (const k of ['cart', 'theme', 'autoprint']) {
-    const old = localStorage.getItem(`pickgo.${k}`);
-    if (old !== null && localStorage.getItem(`gobite.${k}`) === null) localStorage.setItem(`gobite.${k}`, old);
-    localStorage.removeItem(`pickgo.${k}`);
+    for (const prefix of ['gobite', 'pickgo']) {
+      const old = localStorage.getItem(`${prefix}.${k}`);
+      if (old !== null && localStorage.getItem(`torugo.${k}`) === null) localStorage.setItem(`torugo.${k}`, old);
+      localStorage.removeItem(`${prefix}.${k}`);
+    }
   }
 } catch {
   /* almacenamiento no disponible */
 }
-const CART_KEY = 'gobite.cart';
+const CART_KEY = 'torugo.cart';
 
 export interface OrderEvent {
   type: 'new' | 'update';
@@ -49,15 +51,15 @@ interface Toast {
 export type PushState = 'on' | 'off' | 'denied' | 'ios-install' | 'unsupported';
 
 export type Theme = 'claro' | 'oscuro' | 'auto';
-const THEME_KEY = 'gobite.theme';
+const THEME_KEY = 'torugo.theme';
 /** La pantalla de carga se muestra al menos este tiempo, para que la animación se vea completa. */
 const SPLASH_MS = 2000;
 
 // Se calcula una sola vez por carga de página: true solo la primera vez que se abre la app en esta sesión.
 const SHOW_INTRO = (() => {
   try {
-    if (sessionStorage.getItem('gobite.intro')) return false;
-    sessionStorage.setItem('gobite.intro', '1');
+    if (sessionStorage.getItem('torugo.intro')) return false;
+    sessionStorage.setItem('torugo.intro', '1');
   } catch {
     /* almacenamiento no disponible */
   }
@@ -78,7 +80,7 @@ function storedTheme(): Theme {
 export function applyTheme(theme: Theme = storedTheme()) {
   const dark = theme === 'oscuro' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0c0f0b' : '#e6f7ac');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#061629' : '#eaf2fc');
 }
 
 interface InstallEvent extends Event {
@@ -132,8 +134,8 @@ export function useOrderEvents(handler: (e: OrderEvent) => void) {
   ref.current = handler;
   useEffect(() => {
     const fn = (e: Event) => ref.current((e as CustomEvent<OrderEvent>).detail);
-    window.addEventListener('gobite:order', fn);
-    return () => window.removeEventListener('gobite:order', fn);
+    window.addEventListener('torugo:order', fn);
+    return () => window.removeEventListener('torugo:order', fn);
   }, []);
 }
 
@@ -329,10 +331,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           navigator.vibrate?.([200, 100, 200]);
         }
       }
-      window.dispatchEvent(new CustomEvent('gobite:order', { detail }));
+      window.dispatchEvent(new CustomEvent('torugo:order', { detail }));
     });
     // Tras recuperar la conexión o volver a la app, las pantallas recargan sus datos.
-    const refresh = () => window.dispatchEvent(new Event('gobite:refresh'));
+    const refresh = () => window.dispatchEvent(new Event('torugo:refresh'));
     let wasDown = false;
     es.onerror = () => {
       wasDown = true;
@@ -510,8 +512,8 @@ export function useLoad<T>(loader: () => Promise<T>, deps: unknown[]) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(reload, deps);
   useEffect(() => {
-    window.addEventListener('gobite:refresh', reload);
-    return () => window.removeEventListener('gobite:refresh', reload);
+    window.addEventListener('torugo:refresh', reload);
+    return () => window.removeEventListener('torugo:refresh', reload);
   }, [reload]);
   return { data, error, reload, setData };
 }

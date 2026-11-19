@@ -1,6 +1,6 @@
-# GoBite
+# ToruGo
 
-**Pide entre clases. Retira sin fila.** GoBite es una app para estudiantes de universidades e institutos de Chile: pides
+**Pide entre clases. Retira sin fila.** ToruGo es una app para estudiantes de universidades e institutos de Chile: pides
 en los locales de tu sede, retiras justo en tu recreo y el local recibe el pedido al instante para tenerlo listo a esa
 hora. Así no pierdes en la fila los 10 minutos que tienes para comer.
 
@@ -9,7 +9,7 @@ Lo que la distingue:
 - **Calza con tus recreos.** Si el estudiante guarda sus recreos, la app le propone retirar dentro del próximo y marca
   las horas que calzan. Si no los guarda, elige la hora que quiera.
 - **Varios medios de pago.** En la app, en el local o con Junaeb al retirar, según lo que acepte cada local.
-- **Descuentos de GoBite.** Las promociones y la tarjeta de sellos las define y las paga la plataforma con su
+- **Descuentos de ToruGo.** Las promociones y la tarjeta de sellos las define y las paga la plataforma con su
   comisión: el local recibe siempre el precio completo.
 - **Paneles para el local, la institución y la plataforma** con ventas, puntualidad, fila evitada y clientes.
 
@@ -37,7 +37,7 @@ Lo que la distingue:
   efectivo o con Junaeb (ver «Pagar al retirar» y «Junaeb»).
 - Seguimiento en vivo y aviso cuando el pedido está listo, también con la app cerrada.
 - Código de retiro con QR, historial, «pedir lo de siempre» y calificación del local.
-- Promociones de GoBite por hora de retiro, tarjeta de sellos con premio y favoritos.
+- Promociones de ToruGo por hora de retiro, tarjeta de sellos con premio y favoritos.
 - Perfil con cambio de sede, apariencia clara u oscura, ayuda, descarga de datos y eliminación de cuenta.
 
 **Locales**
@@ -52,7 +52,7 @@ Lo que la distingue:
 - Junaeb: el local la activa si está adherido al operador de su sede. Al entregar, la app muestra el monto y cómo
   cobrarlo, y el local confirma si se cobró con Junaeb o con otro medio.
 - En los pedidos que se pagan al retirar, el local ve el historial del cliente (pedidos retirados y no retirados).
-- Panel «Lo que ganaste con GoBite»: ventas por la app, pedidos en horas peak, fila evitada (estimada),
+- Panel «Lo que ganaste con ToruGo»: ventas por la app, pedidos en horas peak, fila evitada (estimada),
   clientes nuevos y recurrentes, y pedidos no retirados que igual se cobraron.
 - Tiempo de preparación por producto e impresión automática de la comanda al aceptar.
 - Menú editable con foto, ícono y opciones por producto (todos opcionales), horarios, cupo por franja,
@@ -66,7 +66,7 @@ Lo que la distingue:
 - Aprobación de locales: un local nuevo no aparece para los estudiantes hasta que la institución lo aprueba.
 - Creación de sedes, con el operador de la beca Junaeb de cada una (se puede corregir si Junaeb lo cambia).
 
-**Plataforma** (quien opera GoBite)
+**Plataforma** (quien opera ToruGo)
 
 - Define la comisión, ve cuánto transferir a cada local y registra cada transferencia; el local ve el detalle.
 - **Locales**: define las promociones y la tarjeta de sellos de cada local, ve cuánto pone en descuentos frente a lo
@@ -90,16 +90,16 @@ npm run dev
 Abre <http://localhost:5173>. La primera vez se crea la base de datos con datos de demostración, incluido un
 historial de pedidos de la última semana para que las métricas tengan contenido.
 
-La pantalla de ingreso tiene botones para entrar con las cuentas de prueba. Todas usan la contraseña `gobite123`:
+La pantalla de ingreso tiene botones para entrar con las cuentas de prueba. Todas usan la contraseña `torugo123`:
 
 | Rol | Correo |
 | --- | --- |
-| Estudiante (con beca y recreos guardados) | `estudiante@gobite.cl` |
-| Local (Café Andén, recibe la beca) | `cafe@gobite.cl` |
-| Local (La Sanguchería) | `sangucheria@gobite.cl` |
-| Local (Casino, recibe la beca) | `casino@gobite.cl` |
-| Institución (Duoc UC) | `admin@gobite.cl` |
-| Plataforma | `plataforma@gobite.cl` |
+| Estudiante (con beca y recreos guardados) | `estudiante@torugo.cl` |
+| Local (Café Andén, recibe la beca) | `cafe@torugo.cl` |
+| Local (La Sanguchería) | `sangucheria@torugo.cl` |
+| Local (Casino, recibe la beca) | `casino@torugo.cl` |
+| Institución (Duoc UC) | `admin@torugo.cl` |
+| Plataforma | `plataforma@torugo.cl` |
 
 Para ver los avisos en vivo, abre el estudiante y el local en ventanas distintas (una de incógnito).
 
@@ -121,50 +121,50 @@ y con HTTPS o en `localhost`.
 | Variable | Por defecto | Para qué sirve |
 | --- | --- | --- |
 | `PORT` | `3001` | Puerto del servidor |
-| `GOBITE_DB` | `data/gobite.db` | Archivo de la base de datos SQLite |
-| `GOBITE_DEMO` | activado | Con `0` arranca sin datos ni cuentas de demostración |
-| `GOBITE_OWNER_EMAIL` y `GOBITE_OWNER_PASSWORD` | sin definir | Crean la cuenta de plataforma al arrancar, si no existe |
-| `GOBITE_SMTP_URL` | sin definir | Servidor de correo, por ejemplo `smtps://usuario:clave@smtp.proveedor.com` |
-| `GOBITE_MAIL_FROM` | sin definir | Remitente, por ejemplo `GoBite <no-responder@tudominio.cl>` |
-| `GOBITE_PUBLIC_URL` | sin definir | Dirección pública de la app, para los enlaces de los correos |
+| `TORUGO_DB` | `data/torugo.db` | Archivo de la base de datos SQLite |
+| `TORUGO_DEMO` | activado | Con `0` arranca sin datos ni cuentas de demostración |
+| `TORUGO_OWNER_EMAIL` y `TORUGO_OWNER_PASSWORD` | sin definir | Crean la cuenta de plataforma al arrancar, si no existe |
+| `TORUGO_SMTP_URL` | sin definir | Servidor de correo, por ejemplo `smtps://usuario:clave@smtp.proveedor.com` |
+| `TORUGO_MAIL_FROM` | sin definir | Remitente, por ejemplo `ToruGo <no-responder@tudominio.cl>` |
+| `TORUGO_PUBLIC_URL` | sin definir | Dirección pública de la app, para los enlaces de los correos |
 
-Las variables con el nombre anterior (`PICKGO_*`) se siguen aceptando: si falta la `GOBITE_*`, se usa la antigua y
-el servidor avisa en el registro. Del mismo modo, si existe `data/pickgo.db` y todavía no hay `data/gobite.db`, se
-sigue usando la base anterior.
+Las variables con los nombres anteriores de la app (`GOBITE_*` y `PICKGO_*`) se siguen aceptando: si falta la
+`TORUGO_*`, se usa la antigua y el servidor avisa en el registro. Del mismo modo, si todavía no hay `data/torugo.db`
+pero existe `data/gobite.db` o `data/pickgo.db`, se sigue usando la base anterior.
 
 Con las tres variables de correo definidas se activan la recuperación de contraseña por correo y los avisos a la
 institución (local nuevo por aprobar) y al local (aprobado o suspendido). Sin ellas, la app funciona igual y la
 plataforma recupera accesos con contraseñas temporales.
 | `TRUST_PROXY` | sin definir | Defínela si el servidor queda detrás de un proxy con HTTPS |
-| `GOBITE_VAPID_SUBJECT` | `mailto:soporte@example.com` | Contacto del operador que exigen los servicios de push; usa uno real en producción |
+| `TORUGO_VAPID_SUBJECT` | `mailto:soporte@example.com` | Contacto del operador que exigen los servicios de push; usa uno real en producción |
 
 ## Cobro en la app
 
-El dinero de los pedidos pagados en la app entra a la cuenta de quien opera GoBite. La app calcula la comisión de
+El dinero de los pedidos pagados en la app entra a la cuenta de quien opera ToruGo. La app calcula la comisión de
 cada pedido y, en **Plataforma → Pagos**, muestra cuánto transferir a cada local; al registrar la transferencia, el
 local la ve con su detalle. Se liquida lo entregado y lo no retirado; lo cancelado se devuelve al estudiante.
 
-| `GOBITE_PAYMENTS` | Qué hace |
+| `TORUGO_PAYMENTS` | Qué hace |
 | --- | --- |
 | sin definir | Sin cobro en la app: todo se paga en el local (con datos de demostración se usa `simulado`) |
 | `simulado` | **Marcha blanca**: flujo completo con una pantalla de pago de prueba. No se mueve dinero |
 | `mercadopago` | Cobro real con Mercado Pago Checkout Pro, con la API de Orders (`/v1/orders`) |
 
-Para Mercado Pago define además `GOBITE_MP_ACCESS_TOKEN` (de tu cuenta de Mercado Pago Developers; las credenciales
-de prueba permiten pagar con tarjetas de prueba), `GOBITE_PUBLIC_URL` (dirección `https://` pública de la app, a la
-que Mercado Pago envía los avisos de pago) y, recomendado, `GOBITE_MP_WEBHOOK_SECRET` (la firma secreta de las
+Para Mercado Pago define además `TORUGO_MP_ACCESS_TOKEN` (de tu cuenta de Mercado Pago Developers; las credenciales
+de prueba permiten pagar con tarjetas de prueba), `TORUGO_PUBLIC_URL` (dirección `https://` pública de la app, a la
+que Mercado Pago envía los avisos de pago) y, recomendado, `TORUGO_MP_WEBHOOK_SECRET` (la firma secreta de las
 notificaciones). En el panel de Mercado Pago, en Configuración de Webhooks, usa la URL
 `https://TU-DIRECCION/api/payments/webhook` con el evento **Order (Mercado Pago)**. La app nunca confía en lo que diga el navegador ni el aviso: siempre vuelve a consultar el pago a
 Mercado Pago y revisa que el monto coincida.
 
-Ten en cuenta que Mercado Pago cobra su propia comisión a tu cuenta: la comisión de GoBite debe cubrirla.
+Ten en cuenta que Mercado Pago cobra su propia comisión a tu cuenta: la comisión de ToruGo debe cubrirla.
 
 ## Quién decide qué
 
 - **El local decide su operación**: menú, precios, horarios, cupo por franja, anticipación, pausar, y aceptar o
   rechazar cada pedido con un motivo. Es quien cocina: si la app le quitara esas decisiones, prometería horas que no
   puede cumplir.
-- **GoBite decide lo comercial**: la comisión, las promociones y la tarjeta de sellos. Y ve la calidad de cada local
+- **ToruGo decide lo comercial**: la comisión, las promociones y la tarjeta de sellos. Y ve la calidad de cada local
   en **Plataforma → Locales**. La institución puede suspender un local que no cumpla.
 
 ## Descuentos (promociones y sellos)
@@ -173,12 +173,12 @@ Los define la plataforma en **Plataforma → Locales → Descuentos**, y los pag
 configura y recibe siempre el precio completo:
 
 - **Pagado en la app**: el estudiante paga el precio con descuento; la comisión se calcula sobre el precio completo y
-  el local recibe el precio completo menos la comisión. GoBite se queda con la comisión menos el descuento.
-- **Pagado al retirar** (efectivo o Junaeb): el local cobra el precio con descuento en el mesón y GoBite le abona la
+  el local recibe el precio completo menos la comisión. ToruGo se queda con la comisión menos el descuento.
+- **Pagado al retirar** (efectivo o Junaeb): el local cobra el precio con descuento en el mesón y ToruGo le abona la
   diferencia en la siguiente liquidación.
 
 Ejemplo con comisión de 8 % y una promoción de 10 % sobre un menú de $4.000: el estudiante paga $3.600, el local
-recibe $3.680 y GoBite pone $80. Si una promoción supera la comisión, el panel lo advierte. Los descuentos de los
+recibe $3.680 y ToruGo pone $80. Si una promoción supera la comisión, el panel lo advierte. Los descuentos de los
 pedidos anteriores a este cambio los había puesto el local y no se abonan.
 
 ## Pagar al retirar
@@ -215,22 +215,22 @@ corregir en **Sedes**. Cada local activa la beca en **Ajustes** solo si está ad
 adhesión se hace directamente con Edenred o Pluxee.
 
 Lo cobrado con la beca no pasa por la plataforma: el dinero le llega al local desde el operador. Solo entra a las
-liquidaciones el abono de los descuentos de GoBite, igual que en los demás pagos al retirar. La app no guarda el RUT, la clave ni el saldo del estudiante.
+liquidaciones el abono de los descuentos de ToruGo, igual que en los demás pagos al retirar. La app no guarda el RUT, la clave ni el saldo del estudiante.
 
 Si algún día un operador abre una integración para plataformas (enlace de pago o API), `server/payments.js` ya está
 pensado para sumar otro proveedor de cobro, como se sumó Mercado Pago.
 
 ## Operar con instituciones reales
 
-1. Arranca con `GOBITE_DEMO=0` y define `GOBITE_OWNER_EMAIL` y `GOBITE_OWNER_PASSWORD`. La base parte vacía, con
+1. Arranca con `TORUGO_DEMO=0` y define `TORUGO_OWNER_EMAIL` y `TORUGO_OWNER_PASSWORD`. La base parte vacía, con
    solo tu cuenta de plataforma.
 2. Entra con esa cuenta y crea la institución: la app te muestra una vez el correo y la contraseña temporal de su
    administración.
 3. La administración entra, cambia su contraseña y crea las sedes que falten.
-4. Cada local se registra solo desde «Súmalo a GoBite» y la administración lo aprueba.
+4. Cada local se registra solo desde «Súmalo a ToruGo» y la administración lo aprueba.
 5. Los estudiantes se registran solos eligiendo su sede.
 
-La base de datos es un archivo SQLite (`GOBITE_DB`). Cada día se guarda una copia en la carpeta `respaldos`, junto
+La base de datos es un archivo SQLite (`TORUGO_DB`). Cada día se guarda una copia en la carpeta `respaldos`, junto
 a la base, y se conservan las últimas siete. Guarda ese archivo en un disco que no se borre.
 
 También hay un `Dockerfile` para correrla en cualquier servicio de contenedores; la base vive en `/data`, donde hay

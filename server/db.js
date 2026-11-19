@@ -226,13 +226,16 @@ const MIGRATIONS = {
 const FIRST_MIGRATABLE = 3;
 
 /**
- * Archivo de la base: GOBITE_DB o data/gobite.db. Si ese archivo todavía no existe pero junto a él está la base
- * de antes del cambio de nombre (pickgo.db), se sigue usando esa para no perder datos.
+ * Archivo de la base: TORUGO_DB o data/torugo.db. Si ese archivo todavía no existe pero junto a él está la base
+ * de un nombre anterior de la app (gobite.db o pickgo.db), se sigue usando esa para no perder datos.
  */
 export function dbFileFrom(env, root) {
-  const file = env.GOBITE_DB ?? path.join(root, 'data', 'gobite.db');
-  const legacy = path.join(path.dirname(file), 'pickgo.db');
-  if (path.basename(file) === 'gobite.db' && !fs.existsSync(file) && fs.existsSync(legacy)) return legacy;
+  const file = env.TORUGO_DB ?? path.join(root, 'data', 'torugo.db');
+  if (path.basename(file) !== 'torugo.db' || fs.existsSync(file)) return file;
+  for (const name of ['gobite.db', 'pickgo.db']) {
+    const legacy = path.join(path.dirname(file), name);
+    if (fs.existsSync(legacy)) return legacy;
+  }
   return file;
 }
 

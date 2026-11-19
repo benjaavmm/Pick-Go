@@ -44,12 +44,12 @@ const login = async (base, email) => {
 };
 
 test('modo de prueba: el pedido llega al local solo cuando se paga, y se reembolsa si el local lo rechaza', async () => {
-  const { db, app, base } = await start(createPayments({ GOBITE_PAYMENTS: 'simulado' }));
+  const { db, app, base } = await start(createPayments({ TORUGO_PAYMENTS: 'simulado' }));
   const shop = db.prepare("SELECT * FROM shops WHERE name = 'Café Andén'").get();
   const agua = db.prepare("SELECT id FROM products WHERE shop_id = ? AND name = 'Agua mineral'").get(shop.id).id;
-  const student = await login(base, 'estudiante@gobite.cl');
-  const local = await login(base, 'cafe@gobite.cl');
-  const owner = await login(base, 'plataforma@gobite.cl');
+  const student = await login(base, 'estudiante@torugo.cl');
+  const local = await login(base, 'cafe@torugo.cl');
+  const owner = await login(base, 'plataforma@torugo.cl');
   assert.equal((await student('GET', '/api/config')).body.payments, 'simulado');
 
   // Café Andén no acepta pagar al retirar.
@@ -112,7 +112,7 @@ test('modo de prueba: el pedido llega al local solo cuando se paga, y se reembol
   assert.match(csv, new RegExp(`"${o2.code}";"Entregado";"En la app";"3000";"240";"0";"2760"`));
   assert.match(csv, /"Total";"";"";"";"3000";"240";"0";"2760"/);
   // Otro local no puede ver esta liquidación.
-  const other = await login(base, 'sangucheria@gobite.cl');
+  const other = await login(base, 'sangucheria@torugo.cl');
   assert.equal((await fetch(`${base}/api/shop/settlements/${r.body.id}.csv`, { headers: { Cookie: other.cookie() } })).status, 404);
 
   // Comisión configurable: se aplica a lo que se pague desde ahora.
@@ -171,15 +171,15 @@ test('Mercado Pago (API de Orders): crea el cobro, confirma consultando a Mercad
   servers.push(mp);
   const secret = 'secreto-webhook';
   const provider = createPayments(
-    { GOBITE_PAYMENTS: 'mercadopago', GOBITE_MP_ACCESS_TOKEN: 'TEST-token', GOBITE_PUBLIC_URL: 'https://gobite.test', GOBITE_MP_WEBHOOK_SECRET: secret },
+    { TORUGO_PAYMENTS: 'mercadopago', TORUGO_MP_ACCESS_TOKEN: 'TEST-token', TORUGO_PUBLIC_URL: 'https://torugo.test', TORUGO_MP_WEBHOOK_SECRET: secret },
     { apiBase: `http://127.0.0.1:${mp.address().port}` },
   );
-  assert.throws(() => createPayments({ GOBITE_PAYMENTS: 'mercadopago' }), /GOBITE_MP_ACCESS_TOKEN/);
+  assert.throws(() => createPayments({ TORUGO_PAYMENTS: 'mercadopago' }), /TORUGO_MP_ACCESS_TOKEN/);
   const { db, app, base } = await start(provider);
   const shop = db.prepare("SELECT * FROM shops WHERE name = 'La Sanguchería'").get();
   const papas = db.prepare("SELECT id FROM products WHERE shop_id = ? AND name = 'Papas fritas'").get(shop.id).id;
-  const student = await login(base, 'estudiante@gobite.cl');
-  const local = await login(base, 'sangucheria@gobite.cl');
+  const student = await login(base, 'estudiante@torugo.cl');
+  const local = await login(base, 'sangucheria@torugo.cl');
   const pay = (id, amount = '1900') => Object.assign(orders.get(id), { status: 'processed', status_detail: 'accredited', total_paid_amount: amount });
 
   const order = (await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-13T13:00', items: [{ productId: papas, qty: 1 }] })).body;
@@ -192,7 +192,7 @@ test('Mercado Pago (API de Orders): crea el cobro, confirma consultando a Mercad
   assert.equal(sent.body.total_amount, '1900');
   assert.equal(sent.body.items[0].unit_price, '1900');
   assert.equal(sent.body.expiration_time, 'PT15M');
-  assert.equal(sent.body.config.online.success_url, `https://gobite.test/pedidos/${order.id}?pago=1`);
+  assert.equal(sent.body.config.online.success_url, `https://torugo.test/pedidos/${order.id}?pago=1`);
   assert.ok(sent.idem);
 
   // Volver a abrir el pago reutiliza la misma order de Mercado Pago: nunca hay dos cobros abiertos.
@@ -257,36 +257,45 @@ test('Mercado Pago (API de Orders): crea el cobro, confirma consultando a Mercad
   assert.equal(orders.get(o3.payment_ref).status, 'canceled');
 });
 
-test('las variables PICKGO_* siguen funcionando y la base anterior se sigue usando', async () => {
+test('las variables GOBITE_* y PICKGO_* siguen funcionando y la base anterior se sigue usando', async () => {
   const { migrateEnv } = await import('./brand.js');
   const { dbFileFrom } = await import('./db.js');
   const warnings = [];
-  const env = migrateEnv({ PICKGO_PAYMENTS: 'simulado', GOBITE_DEMO: '0', PICKGO_DEMO: '1' }, (w) => warnings.push(w));
-  assert.equal(env.GOBITE_PAYMENTS, 'simulado');
-  // Si ya está la variable nueva, manda la nueva.
-  assert.equal(env.GOBITE_DEMO, '0');
-  assert.equal(warnings.length, 1);
+  const env = migrateEnv(
+    { GOBITE_PAYMENTS: 'simulado', PICKGO_PAYMENTS: 'mercadopago', PICKGO_PUBLIC_URL: 'https://antes.test', TORUGO_DEMO: '0', PICKGO_DEMO: '1' },
+    (w) => warnings.push(w),
+  );
+  // El nombre más reciente gana sobre el más antiguo, y la variable nueva sobre ambos.
+  assert.equal(env.TORUGO_PAYMENTS, 'simulado');
+  assert.equal(env.TORUGO_PUBLIC_URL, 'https://antes.test');
+  assert.equal(env.TORUGO_DEMO, '0');
+  assert.equal(warnings.length, 2);
   assert.equal(createPayments(env).mode, 'simulado');
 
   const fs = await import('node:fs');
   const os = await import('node:os');
   const path = await import('node:path');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gobite-'));
-  assert.equal(dbFileFrom({}, dir), path.join(dir, 'data', 'gobite.db'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'torugo-'));
+  const data = (name) => path.join(dir, 'data', name);
+  assert.equal(dbFileFrom({}, dir), data('torugo.db'));
   fs.mkdirSync(path.join(dir, 'data'));
-  fs.writeFileSync(path.join(dir, 'data', 'pickgo.db'), '');
-  assert.equal(dbFileFrom({}, dir), path.join(dir, 'data', 'pickgo.db'));
-  assert.equal(dbFileFrom({ GOBITE_DB: path.join(dir, 'data', 'gobite.db') }, dir), path.join(dir, 'data', 'pickgo.db'));
-  assert.equal(dbFileFrom({ GOBITE_DB: '/otra/base.db' }, dir), '/otra/base.db');
+  fs.writeFileSync(data('pickgo.db'), '');
+  assert.equal(dbFileFrom({}, dir), data('pickgo.db'));
+  fs.writeFileSync(data('gobite.db'), '');
+  assert.equal(dbFileFrom({}, dir), data('gobite.db'));
+  assert.equal(dbFileFrom({ TORUGO_DB: data('torugo.db') }, dir), data('gobite.db'));
+  fs.writeFileSync(data('torugo.db'), '');
+  assert.equal(dbFileFrom({}, dir), data('torugo.db'));
+  assert.equal(dbFileFrom({ TORUGO_DB: '/otra/base.db' }, dir), '/otra/base.db');
 });
 
 test('descuentos de la plataforma: el local recibe el precio completo y se le abona lo cobrado de menos', async () => {
-  const { db, base } = await start(createPayments({ GOBITE_PAYMENTS: 'simulado' }));
+  const { db, base } = await start(createPayments({ TORUGO_PAYMENTS: 'simulado' }));
   const shop = db.prepare("SELECT * FROM shops WHERE name = 'Casino'").get();
   const menu = db.prepare("SELECT id FROM products WHERE shop_id = ? AND name = 'Menú del día'").get(shop.id).id; // $4.000
-  const student = await login(base, 'estudiante@gobite.cl');
-  const local = await login(base, 'casino@gobite.cl');
-  const owner = await login(base, 'plataforma@gobite.cl');
+  const student = await login(base, 'estudiante@torugo.cl');
+  const local = await login(base, 'casino@torugo.cl');
+  const owner = await login(base, 'plataforma@torugo.cl');
   // 10 % menos retirando entre 15:00 y 16:00, definido por la plataforma (comisión de la demo: 8 %).
   await owner('PATCH', `/api/owner/shops/${shop.id}`, { promos: [{ from: 900, to: 960, percent: 10 }] });
   const item = [{ productId: menu, qty: 1 }];
@@ -315,11 +324,11 @@ test('descuentos de la plataforma: el local recibe el precio completo y se le ab
 });
 
 test('pagar al retirar: un pedido sin pagar a la vez, y quien no retira solo puede pagar en la app', async () => {
-  const { db, base } = await start(createPayments({ GOBITE_PAYMENTS: 'simulado' }));
+  const { db, base } = await start(createPayments({ TORUGO_PAYMENTS: 'simulado' }));
   const shop = db.prepare("SELECT * FROM shops WHERE name = 'Casino'").get();
   const fruta = db.prepare("SELECT id FROM products WHERE shop_id = ? AND name = 'Fruta picada'").get(shop.id).id;
-  const student = await login(base, 'estudiante@gobite.cl');
-  const local = await login(base, 'casino@gobite.cl');
+  const student = await login(base, 'estudiante@torugo.cl');
+  const local = await login(base, 'casino@torugo.cl');
   const order = (slot, paymentMethod) => student('POST', '/api/orders', { shopId: shop.id, slot, paymentMethod, items: [{ productId: fruta, qty: 1 }] });
 
   assert.equal((await student('GET', '/api/me')).body.pay_later_problem, null);

@@ -1,5 +1,6 @@
 import '@fontsource-variable/bricolage-grotesque';
 import '@fontsource-variable/figtree';
+import '@fontsource-variable/figtree/wght-italic.css';
 import '@fontsource-variable/jetbrains-mono';
 import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';

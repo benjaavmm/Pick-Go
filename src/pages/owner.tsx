@@ -402,7 +402,7 @@ export function OwnerPayments() {
       {!data.mode && (
         <p className="notice notice-warn">
           <TriangleAlert size={18} aria-hidden />
-          <span>El cobro en la app está desactivado: todos los pedidos se pagan en el local. Se activa con GOBITE_PAYMENTS.</span>
+          <span>El cobro en la app está desactivado: todos los pedidos se pagan en el local. Se activa con TORUGO_PAYMENTS.</span>
         </p>
       )}
       {data.mode === 'simulado' && (
