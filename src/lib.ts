@@ -72,7 +72,12 @@ export interface Shop {
   rating: number | null;
   ratings: number;
   is_open: boolean;
-  next_slot: { slot: string; day: 'hoy' | 'manana'; time: string } | null;
+  /** Próxima hora libre de hoy. Solo se pide para el mismo día. */
+  next_slot: { slot: string; day: 'hoy'; time: string } | null;
+  /** Si hoy ya no atiende: cuándo vuelve a recibir pedidos. */
+  reopens: { date: string; time: string } | null;
+  /** Atiende hoy, pero las horas que quedan están todas tomadas. */
+  full_today: boolean;
 }
 export interface Product {
   id: number;
@@ -143,7 +148,7 @@ export interface ChosenOption {
 }
 export interface Slot {
   slot: string;
-  day: 'hoy' | 'manana';
+  day: 'hoy';
   time: string;
   remaining: number;
   /** Descuento por promoción en esa hora de retiro, si hay. */
@@ -353,6 +358,18 @@ export const shortDay = (date: string) => {
   const d = new Date(`${date}T12:00:00Z`);
   return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()}`;
 };
+
+const WEEKDAYS_LONG = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+/** Día en que vuelve a abrir un local: «hoy», «mañana» o el nombre del día («lunes»). */
+export function reopensDay(date: string) {
+  const diff = dayDiff(date, chileNow().date);
+  return diff === 0 ? 'hoy' : diff === 1 ? 'mañana' : WEEKDAYS_LONG[new Date(`${date}T12:00:00Z`).getUTCDay()];
+}
+/** «hoy a las 15:00», «mañana a las 07:30» o «el lunes a las 07:30». */
+export function reopensText(r: { date: string; time: string }) {
+  const day = reopensDay(r.date);
+  return `${day === 'hoy' || day === 'mañana' ? day : `el ${day}`} a las ${r.time}`;
+}
 
 export const clockTime = (iso: string) =>
   new Intl.DateTimeFormat('es-CL', { timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(

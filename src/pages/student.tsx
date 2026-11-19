@@ -48,6 +48,8 @@ import {
   optionsText,
   paymentText,
   relativeTime,
+  reopensDay,
+  reopensText,
   slotDay,
   slotLabel,
   STATUS_LABEL,
@@ -248,7 +250,11 @@ function BreakCard({ breaks }: { breaks: Break[] | undefined }) {
           {next.today && !next.ongoing && minutes > 0 && <small> · en {minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`}</small>}
         </strong>
         <span className="muted">
-          {next.ongoing ? 'Pide ahora: te mostramos la hora más cercana para retirar.' : 'Pide ahora y te proponemos retirar justo al empezar tu recreo.'}
+          {next.ongoing
+            ? 'Pide ahora: te mostramos la hora más cercana para retirar.'
+            : next.today
+              ? 'Pide ahora y te proponemos retirar justo al empezar tu recreo.'
+              : 'Ese día, pide desde la sala y te proponemos retirar justo al empezar tu recreo.'}
         </span>
       </span>
     </section>
@@ -400,7 +406,7 @@ export function Home() {
       )}
       <ul className="list" hidden={searching}>
         {sorted.map((s) => {
-          const soon = s.next_slot && s.next_slot.day === 'hoy';
+          const soon = !!s.next_slot;
           return (
             <li key={s.id}>
               <Link to={`/local/${s.id}`} className="card shop-card">
@@ -419,13 +425,19 @@ export function Home() {
                 </span>
                 {s.paused || !s.next_slot ? (
                   <span className="when when-off">
-                    <small>{s.paused ? 'En pausa' : 'Sin horas'}</small>
+                    <small>{s.paused ? 'En pausa' : s.full_today ? 'Lleno hoy' : s.reopens ? 'Abre' : 'Cerrado'}</small>
+                    {!s.paused && s.reopens && (
+                      <>
+                        <b>{s.reopens.time}</b>
+                        <small>{reopensDay(s.reopens.date)}</small>
+                      </>
+                    )}
                   </span>
                 ) : (
                   <span className={`when ${soon ? 'when-on' : ''}`}>
-                    <small>{soon ? 'Retira' : 'Mañana'}</small>
+                    <small>Retira</small>
                     <b>{s.next_slot.time}</b>
-                    <small>{soon ? relativeTime(s.next_slot.slot) : s.is_open ? '' : 'Cerrado hoy'}</small>
+                    <small>{relativeTime(s.next_slot.slot)}</small>
                   </span>
                 )}
               </Link>
@@ -581,17 +593,19 @@ export function ShopPage() {
         <p className="notice">
           <Clock size={18} aria-hidden />
           <span>
-            Puedes retirar{' '}
-            <strong>
-              {shop.next_slot.day === 'manana' ? 'mañana a las ' : 'hoy a las '}
-              {shop.next_slot.time}
-            </strong>
-            {shop.next_slot.day === 'hoy' && ` (${relativeTime(shop.next_slot.slot)})`}
+            Puedes retirar <strong>hoy a las {shop.next_slot.time}</strong> ({relativeTime(shop.next_slot.slot)})
           </span>
         </p>
       ) : (
         <p className="notice notice-warn">
-          <TriangleAlert size={18} aria-hidden /> No quedan horas de retiro disponibles.
+          <TriangleAlert size={18} aria-hidden />
+          <span>
+            {shop.full_today
+              ? 'Las horas de retiro que quedan hoy ya están tomadas.'
+              : shop.reopens
+                ? <>Por hoy ya no recibe pedidos. Vuelve a abrir <strong>{reopensText(shop.reopens)}</strong>: pide ese día, cuando estés en la sede.</>
+                : 'Por hoy ya no recibe pedidos.'}
+          </span>
         </p>
       )}
 
@@ -680,27 +694,13 @@ export function ShopPage() {
 
 // ---------- Carrito y hora de retiro ----------
 function SlotPicker({ slots, value, onChange, breaks }: { slots: Slot[]; value: string; onChange: (s: string) => void; breaks?: Break[] }) {
-  const hasToday = slots.some((s) => s.day === 'hoy');
-  const chosenDay = slots.find((s) => s.slot === value)?.day;
-  const [day, setDay] = useState<'hoy' | 'manana'>(chosenDay ?? (hasToday ? 'hoy' : 'manana'));
-  // Si la hora propuesta cae mañana, se muestra ese día.
-  useEffect(() => {
-    if (chosenDay) setDay(chosenDay);
-  }, [chosenDay]);
-  const shown = slots.filter((s) => s.day === day);
+  // Solo horas de hoy: la app es para el recreo que viene.
+  const shown = slots;
   const anyBreak = shown.some((s) => breakFor(breaks, s.slot));
   return (
     <div>
-      <div className="segmented">
-        <button className={day === 'hoy' ? 'on' : ''} onClick={() => setDay('hoy')} disabled={!hasToday}>
-          Hoy
-        </button>
-        <button className={day === 'manana' ? 'on' : ''} onClick={() => setDay('manana')}>
-          Mañana
-        </button>
-      </div>
       {shown.length === 0 ? (
-        <p className="muted">No quedan horas para hoy. Puedes dejar tu pedido para mañana.</p>
+        <p className="muted">No quedan horas de retiro para hoy en este local.</p>
       ) : (
         <div className="slots" role="radiogroup" aria-label="Hora de retiro">
           {shown.map((s) => (

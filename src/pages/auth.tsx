@@ -533,7 +533,7 @@ export function Terms({ back = '/' }: { back?: string }) {
 
 const FAQ: [string, string][] = [
   [`¿Cómo funciona ${BRAND}?`, 'Eliges un local de tu sede, armas tu pedido y escoges a qué hora lo retiras. El local lo recibe al instante y lo prepara para esa hora. Cuando está listo te avisamos; llegas, muestras tu código y te lo llevas.'],
-  ['¿Con cuánta anticipación tengo que pedir?', 'Cada local define cuánto necesita para preparar. La app solo te muestra las horas que todavía alcanzan, partiendo por la más cercana. También puedes dejar pedido para mañana.'],
+  ['¿Con cuánta anticipación tengo que pedir?', 'Cada local define cuánto necesita para preparar. La app solo te muestra las horas que todavía alcanzan, partiendo por la más cercana. Los pedidos son para el mismo día: pides durante la jornada, para tu próximo recreo.'],
   ['¿Por qué una hora aparece como "Lleno"?', 'Cada local acepta una cantidad limitada de pedidos cada 10 minutos, para poder tenerlos todos a tiempo. Si una hora se llenó, elige la siguiente.'],
   ['¿Cómo retiro mi pedido?', 'Abre el pedido en la app y muestra el código QR o el código de seis caracteres. El local lo escanea o lo escribe y te entrega tu pedido.'],
   ['¿Puedo cancelar?', 'Sí, mientras el local no haya aceptado el pedido. Después de eso ya no se puede cancelar desde la app.'],

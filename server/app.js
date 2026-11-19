@@ -17,7 +17,7 @@ import {
 import { OPERATORS, operatorForCity } from './baes.js';
 import { BRAND, CODE_PREFIX, SLUG } from './brand.js';
 import { CHECKOUT_MINUTES } from './payments.js';
-import { addDays, buildSlots, chileNow, chileStamp, isOpenNow, toMinutes } from './time.js';
+import { addDays, buildSlots, chileNow, chileStamp, isOpenNow, nextOpening, toMinutes } from './time.js';
 
 class HttpError extends Error {
   constructor(status, message, data) {
@@ -312,7 +312,8 @@ export function createApp(
   };
 
   const shopOut = (s) => {
-    const next = s.status === 'activo' ? buildSlots(s, now(), slotCounts(s.id)).find((x) => x.remaining > 0) : null;
+    const today = s.status === 'activo' ? buildSlots(s, now(), slotCounts(s.id)) : [];
+    const next = today.find((x) => x.remaining > 0) ?? null;
     const r = db.prepare('SELECT AVG(rating) AS avg, COUNT(rating) AS n FROM orders WHERE shop_id = ?').get(s.id);
     return {
       ...s,
@@ -326,6 +327,10 @@ export function createApp(
       logo: s.logo_id ? `/api/images/${s.logo_id}` : null,
       is_open: isOpenNow(s, now()),
       next_slot: next ? { slot: next.slot, day: next.day, time: next.time } : null,
+      // Hoy ya no atiende: cuándo vuelve a recibir pedidos (para decirlo en vez de ofrecer mañana).
+      reopens: today.length === 0 && s.status === 'activo' ? nextOpening(s, now()) : null,
+      // Atiende hoy, pero todas las horas que quedan ya están tomadas.
+      full_today: today.length > 0 && !next,
       rating: r.n ? Math.round(r.avg * 10) / 10 : null,
       ratings: r.n,
     };

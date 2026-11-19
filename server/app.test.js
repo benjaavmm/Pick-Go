@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { openDb, SCHEMA_VERSION } from './db.js';
 import { DEMO_PASSWORD, seedIfEmpty } from './seed.js';
-import { buildSlots, chileNow } from './time.js';
+import { buildSlots, chileNow, nextOpening } from './time.js';
 
 // Viernes 13 de noviembre de 2026, 12:00 en Chile (UTC-3 en horario de verano).
 let clock = new Date('2026-11-13T15:00:00Z');
@@ -67,8 +67,13 @@ test('la hora de Chile y las franjas respetan la anticipación y el cierre', () 
   assert.equal(slots[0].slot, '2026-11-13T12:10');
   const today = slots.filter((s) => s.day === 'hoy');
   assert.equal(today.at(-1).time, '22:00');
-  const tomorrow = slots.filter((s) => s.day === 'manana');
-  assert.equal(tomorrow[0].slot, '2026-11-14T07:40');
+  // Solo se pide para el mismo día.
+  assert.ok(slots.every((s) => s.slot.startsWith('2026-11-13')));
+  assert.deepEqual(nextOpening({ opens: 450, closes: 1320, days: '0123456', paused: 0 }, clock), { date: '2026-11-14', time: '07:30' });
+  // Antes de abrir, abre hoy; si no atiende el fin de semana, el lunes.
+  assert.deepEqual(nextOpening({ opens: 900, closes: 1320, days: '12345', paused: 0 }, clock), { date: '2026-11-13', time: '15:00' });
+  assert.deepEqual(nextOpening({ opens: 450, closes: 1320, days: '12345', paused: 0 }, clock), { date: '2026-11-16', time: '07:30' });
+  assert.equal(nextOpening({ opens: 450, closes: 1320, days: '0123456', paused: 1 }, clock), null);
   assert.equal(buildSlots({ opens: 450, closes: 1320, prep_minutes: 10, slot_capacity: 6, paused: 1 }, clock).length, 0);
 });
 
@@ -551,8 +556,13 @@ test('días de atención, motivo al rechazar y exportación de pedidos', async (
   assert.ok(slots.length > 0 && slots.every((s) => s.day === 'hoy'));
   r = await shopUser('PATCH', '/api/shop/me', { days: '6' });
   slots = (await student('GET', `/api/shops/${shop.id}/slots`)).body;
-  assert.ok(slots.length > 0 && slots.every((s) => s.day === 'manana'));
+  // Hoy no atiende: no hay horas (no se ofrece mañana) y se avisa cuándo vuelve a abrir.
+  assert.equal(slots.length, 0);
   assert.equal(r.body.is_open, false);
+  assert.equal(r.body.next_slot, null);
+  assert.deepEqual(r.body.reopens, { date: '2026-11-14', time: '08:00' });
+  const tomorrowItem = [{ productId: productOf(shop.id, 'Menú del día').id, qty: 1 }];
+  assert.equal((await student('POST', '/api/orders', { shopId: shop.id, slot: '2026-11-14T12:00', items: tomorrowItem })).status, 409);
   await shopUser('PATCH', '/api/shop/me', { days: '0123456' });
 
   const item = [{ productId: productOf(shop.id, 'Menú del día').id, qty: 1 }];

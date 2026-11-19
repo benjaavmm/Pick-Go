@@ -30,7 +30,8 @@ export function hhmm(minutes) {
 const ceilStep = (m) => Math.ceil(m / SLOT_STEP) * SLOT_STEP;
 
 /**
- * Franjas de retiro de hoy y mañana para un local.
+ * Franjas de retiro de hoy para un local. Solo se pide para el mismo día: la app es para el recreo que viene, y
+ * pedir de un día para otro sube los pedidos que nadie retira y deja el pago retenido toda la noche.
  * `counts` es un Map franja -> pedidos ya tomados; cada franja admite `slot_capacity` pedidos,
  * así la demanda del horario peak se reparte en vez de llegar toda junta.
  */
@@ -53,8 +54,24 @@ export function buildSlots(shop, now, counts = new Map()) {
     }
   };
   push(date, 'hoy', Math.max(shop.opens, minutes) + shop.prep_minutes);
-  push(addDays(date, 1), 'manana', shop.opens + shop.prep_minutes);
   return out;
+}
+
+/**
+ * Cuándo vuelve a recibir pedidos un local que hoy ya no tiene horas: el próximo día que atiende, a la hora en que
+ * abre. Devuelve { date, time } o null si está en pausa (no se sabe cuándo vuelve).
+ */
+export function nextOpening(shop, now) {
+  if (shop.paused) return null;
+  const { date, minutes } = chileNow(now);
+  const days = shop.days ?? '0123456';
+  // Hoy, si todavía no abre (antes de la hora de apertura ya se puede pedir, así que esto es raro).
+  if (days.includes(String(weekday(date))) && minutes < shop.opens) return { date, time: hhmm(shop.opens) };
+  for (let i = 1; i <= 7; i++) {
+    const day = addDays(date, i);
+    if (days.includes(String(weekday(day)))) return { date: day, time: hhmm(shop.opens) };
+  }
+  return null;
 }
 
 /** Día de la semana de una fecha 'AAAA-MM-DD': 0 = domingo … 6 = sábado. */

@@ -27,7 +27,7 @@ Lo que la distingue:
 
 - Registro con correo y sede; las sedes se agrupan por institución.
 - Locales ordenados por la hora más cercana en que se puede retirar, con buscador de productos.
-- Hora de retiro en franjas de 10 minutos, para hoy o mañana. Cada franja tiene cupo, así la demanda del horario
+- Hora de retiro en franjas de 10 minutos, solo para el mismo día. Cada franja tiene cupo, así la demanda del horario
   peak se reparte.
 - Productos con foto y opciones (tamaños, agregados), con el precio calculado al elegir.
 - **Mis recreos**: guarda tus recreos (días y horario) y al pedir te proponemos retirar dentro del próximo; las horas
