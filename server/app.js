@@ -323,6 +323,7 @@ export function createApp(
       accepts_baes: !!s.accepts_baes,
       baes_operator: campusOperator(s.campus_id),
       promos: parseJson(s.promos),
+      logo: s.logo_id ? `/api/images/${s.logo_id}` : null,
       is_open: isOpenNow(s, now()),
       next_slot: next ? { slot: next.slot, day: next.day, time: next.time } : null,
       rating: r.n ? Math.round(r.avg * 10) / 10 : null,
@@ -1336,13 +1337,16 @@ export function createApp(
       accepts_baes: b.accepts_baes !== undefined ? (b.accepts_baes ? 1 : 0) : s.accepts_baes,
       color: b.color !== undefined ? hexColor(b.color, 'El color principal') : s.color,
       color_2: b.color_2 !== undefined ? hexColor(b.color_2, 'El color de los sellos') : s.color_2,
+      logo_id: b.logoId !== undefined ? (b.logoId === null ? null : int(b.logoId, 1, 1e12, 'El logo')) : s.logo_id,
       promos: s.promos,
       loyalty_every: s.loyalty_every,
       loyalty_max: s.loyalty_max,
     };
     if (next.closes <= next.opens) fail(400, 'La hora de cierre debe ser posterior a la de apertura.');
+    if (next.logo_id && next.logo_id !== s.logo_id && !db.prepare('SELECT 1 FROM images WHERE id = ? AND shop_id = ?').get(next.logo_id, s.id))
+      fail(400, 'Ese logo no es de tu local. Súbelo de nuevo.');
     db.prepare(
-      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?, pay_at_shop=?, accepts_baes=?, color=?, color_2=?, promos=?, loyalty_every=?, loyalty_max=?
+      `UPDATE shops SET name=?, description=?, location=?, emoji=?, opens=?, closes=?, prep_minutes=?, slot_capacity=?, paused=?, auto_accept=?, days=?, pay_at_shop=?, accepts_baes=?, color=?, color_2=?, logo_id=?, promos=?, loyalty_every=?, loyalty_max=?
        WHERE id=?`,
     ).run(
       next.name,
@@ -1360,11 +1364,13 @@ export function createApp(
       next.accepts_baes,
       next.color,
       next.color_2,
+      next.logo_id,
       next.promos,
       next.loyalty_every,
       next.loyalty_max,
       s.id,
     );
+    if (next.logo_id !== s.logo_id) sweepImages(s.id);
     res.json(shopOut(getShop(s.id)));
   });
 
@@ -1596,12 +1602,13 @@ export function createApp(
     return p;
   };
   const productOut = (id) => productRow(db.prepare('SELECT * FROM products WHERE id = ?').get(id));
-  /** Borra las fotos del local que ya no usa ningún producto (con una hora de gracia para las recién subidas). */
+  /** Borra las fotos del local que ya no usa ningún producto ni su logo (con una hora de gracia para las recién subidas). */
   const sweepImages = (shopId) => {
     db.prepare(
       `DELETE FROM images WHERE shop_id = ? AND created_at < ?
-         AND id NOT IN (SELECT image_id FROM products WHERE shop_id = ? AND image_id IS NOT NULL AND deleted = 0)`,
-    ).run(shopId, new Date(now().getTime() - 3600_000).toISOString(), shopId);
+         AND id NOT IN (SELECT image_id FROM products WHERE shop_id = ? AND image_id IS NOT NULL AND deleted = 0)
+         AND id NOT IN (SELECT logo_id FROM shops WHERE id = ? AND logo_id IS NOT NULL)`,
+    ).run(shopId, new Date(now().getTime() - 3600_000).toISOString(), shopId, shopId);
   };
 
   // Fotos de productos. El navegador las reduce antes de subirlas; aquí se revisa que de verdad sean imágenes.

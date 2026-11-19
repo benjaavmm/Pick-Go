@@ -53,7 +53,7 @@ import {
 } from '../lib';
 import { BRAND } from '../brand';
 import { beep, useApp, useLoad, useOrderEvents, useTick } from '../state';
-import { BarChart, Empty, Kpi, Loading, Logo, ProductTile, Sheet, StampCard } from '../ui';
+import { BarChart, Empty, Kpi, Loading, Logo, ProductTile, Sheet, ShopLogo, StampCard } from '../ui';
 import { AccountSettings } from './account';
 
 export function ShopLayout() {
@@ -855,8 +855,11 @@ interface ProductForm {
 }
 const BLANK: ProductForm = { category: '', name: '', description: '', price: '', emoji: '', image: null, imageId: null, options: [], prepMinutes: '' };
 
-/** Reduce la foto en el propio dispositivo antes de subirla: carga rápida con datos móviles y menos espacio. */
-async function uploadPhoto(file: File): Promise<{ id: number; url: string }> {
+/**
+ * Reduce la foto en el propio dispositivo antes de subirla: carga rápida con datos móviles y menos espacio.
+ * Los logos se suben en PNG y más chicos, para conservar el fondo transparente.
+ */
+async function uploadPhoto(file: File, { logo = false } = {}): Promise<{ id: number; url: string }> {
   const src = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -865,17 +868,20 @@ async function uploadPhoto(file: File): Promise<{ id: number; url: string }> {
       el.onerror = () => reject(new Error('No pudimos leer esa imagen. Prueba con una foto JPG o PNG.'));
       el.src = src;
     });
-    const scale = Math.min(1, 900 / Math.max(img.naturalWidth, img.naturalHeight));
+    const scale = Math.min(1, (logo ? 360 : 900) / Math.max(img.naturalWidth, img.naturalHeight));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
     const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!logo) {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.82));
+    const type = logo ? 'image/png' : 'image/jpeg';
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, type, 0.82));
     if (!blob) throw new Error('No pudimos procesar esa imagen.');
-    const res = await fetch('/api/shop/images', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+    const res = await fetch('/api/shop/images', { method: 'POST', headers: { 'Content-Type': type }, body: blob });
     const data = await res.json().catch(() => null);
     if (!res.ok) throw new Error(data?.error ?? 'No pudimos subir la foto.');
     return data;
@@ -1287,17 +1293,50 @@ export function LoyaltyEditor({ shop, onSave }: { shop: Discounts; onSave: (ever
   );
 }
 
-/** Colores del local para su tarjeta de sellos, con una vista previa en vivo. */
+/** Marca del local: su logo y los colores de su tarjeta de sellos, con vista previa en vivo. */
 function CardColors({ shop, save }: { shop: Shop; save: (body: object, ok: string) => Promise<void> }) {
+  const [uploading, setUploading] = useState(false);
+  const [logoError, setLogoError] = useState('');
+  const pickLogo = async (file?: File) => {
+    if (!file) return;
+    setUploading(true);
+    setLogoError('');
+    try {
+      const up = await uploadPhoto(file, { logo: true });
+      await save({ logoId: up.id }, 'Logo actualizado');
+    } catch (e) {
+      setLogoError(errorText(e));
+    } finally {
+      setUploading(false);
+    }
+  };
   const [color, setColor] = useState(shop.color || CARD_DEFAULT.color);
   const [color2, setColor2] = useState(shop.color_2 || CARD_DEFAULT.color2);
   const changed = color !== (shop.color || CARD_DEFAULT.color) || color2 !== (shop.color_2 || CARD_DEFAULT.color2);
   const preview = { every: shop.loyalty_every || 5, max: shop.loyalty_max || 2000, stamps: Math.min(3, (shop.loyalty_every || 5) - 1), rewards: 0 };
   return (
     <section className="card form card-colors">
-      <h2>Colores de tu tarjeta de sellos</h2>
-      <p className="muted">Usa los colores de tu marca: así los estudiantes reconocen tu tarjeta al tiro.</p>
-      <StampCard shop={{ name: shop.name, emoji: shop.emoji, color, color_2: color2 }} card={preview} />
+      <h2>Tu marca</h2>
+      <p className="muted">Tu logo aparece en la lista de locales y en tu tarjeta de sellos. Usa tus colores: así los estudiantes te reconocen al tiro.</p>
+      <div className="logo-field">
+        <ShopLogo shop={{ ...shop, color }} large />
+        <div className="grow">
+          <strong>Logo del local</strong>
+          <small className="muted">PNG con fondo transparente o JPG, idealmente cuadrado.</small>
+          {logoError && <small className="error">{logoError}</small>}
+        </div>
+        <label className={`btn btn-soft btn-sm ${uploading ? 'disabled' : ''}`}>
+          {uploading ? 'Subiendo…' : shop.logo ? 'Cambiar' : 'Subir logo'}
+          <input type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={uploading} onChange={(e) => void pickLogo(e.target.files?.[0])} />
+        </label>
+        {shop.logo && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void save({ logoId: null }, 'Logo quitado: se muestra tu ícono')}>
+            Quitar
+          </button>
+        )}
+      </div>
+      <h3>Colores de tu tarjeta de sellos</h3>
+      <StampCard shop={{ name: shop.name, emoji: shop.emoji, logo: shop.logo, color, color_2: color2 }} card={preview} />
       <div className="form-row">
         <label className="grow color-field">
           Color principal

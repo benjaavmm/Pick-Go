@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { hashPassword } from './auth.js';
 import { operatorForCity } from './baes.js';
 import { BRAND } from './brand.js';
@@ -6,8 +7,8 @@ import { addDays, chileNow, hhmm } from './time.js';
 export const DEMO_PASSWORD = 'torugo123';
 
 // Datos de demostración. En la Sede Viña del Mar están los locales que los estudiantes más usan (Pronto Copec,
-// Pepe Pug y el Casino). Sus colores se aproximan a los de cada marca y sus menús a lo que venden, pero los
-// precios son de ejemplo: cada local real edita su menú, sus precios y sus colores desde su panel.
+// Pepe Pug y el Casino). Los colores salen de cada marca (ver el comentario de cada local) y los menús de lo que
+// venden, pero los precios son de ejemplo: cada local real edita su menú, precios, colores y logo desde su panel.
 const DATA = [
   {
     institution: 'Duoc UC',
@@ -28,7 +29,7 @@ const DATA = [
             prep: 10,
             capacity: 6,
             baes: true,
-            // Negro y café claro, como un pug.
+            // Provisorios: no se pudo revisar su logo (solo está en su Instagram). Negro y beige de un pug.
             color: '#2b2420',
             color2: '#e3c39d',
             products: [
@@ -62,9 +63,10 @@ const DATA = [
             closes: 1290,
             prep: 10,
             capacity: 5,
-            // Rojo y azul de Copec.
-            color: '#d71920',
-            color2: '#0b3b8c',
+            // Rojo de Pronto (--red-50 en la hoja de estilos de prontocopec.cl) y el verde de la hoja de su mascota.
+            color: '#d1111c',
+            color2: '#3eb100',
+            logo: 'pronto-copec.png',
             products: [
               ['Completos', 'Completo italiano', 'Tomate, palta y mayo', 2900, '🌭'],
               ['Completos', 'Completo palta', 'Palta Hass', 2700, '🌭'],
@@ -97,9 +99,9 @@ const DATA = [
             prep: 15,
             capacity: 10,
             baes: true,
-            // Amarillo y negro de Duoc UC: el Casino es de la sede.
-            color: '#ffb81c',
-            color2: '#1f1f1f',
+            // Sin marca propia: amarillo y grafito de Duoc UC, los de duoc.cl (#ffb800 y el fondo de su encabezado).
+            color: '#ffb800',
+            color2: '#1a1a1a',
             products: [
               ['Almuerzos', 'Menú del día', 'Entrada, plato de fondo y postre', 4000, '🍛'],
               ['Almuerzos', 'Menú vegetariano', 'Entrada, plato de fondo y postre', 4000, '🥦'],
@@ -317,6 +319,16 @@ export function seedIfEmpty(db, { now = new Date(), history = true } = {}) {
             nowIso,
           )
           .lastInsertRowid;
+        if (s.logo) {
+          // Logo de la demo (ver server/demo-logos/LEEME.md). Si el archivo no está, el local queda con su ícono.
+          const file = new URL(`./demo-logos/${s.logo}`, import.meta.url);
+          if (fs.existsSync(file)) {
+            const logoId = db
+              .prepare('INSERT INTO images (shop_id, mime, data, created_at) VALUES (?,?,?,?)')
+              .run(shopId, 'image/png', fs.readFileSync(file), nowIso).lastInsertRowid;
+            db.prepare('UPDATE shops SET logo_id = ? WHERE id = ?').run(logoId, shopId);
+          }
+        }
         const insProduct = db.prepare(
           'INSERT INTO products (shop_id, category, name, description, price, emoji, options) VALUES (?,?,?,?,?,?,?)',
         );

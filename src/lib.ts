@@ -64,6 +64,8 @@ export interface Shop {
   color: string;
   /** Color de los sellos ganados (#rrggbb), o vacío. */
   color_2: string;
+  /** Dirección del logo del local, si subió uno. */
+  logo: string | null;
   /** Días que atiende: dígitos de 0 (domingo) a 6 (sábado). */
   days: string;
   status: ShopStatus;

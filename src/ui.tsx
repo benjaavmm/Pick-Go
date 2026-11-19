@@ -2,7 +2,7 @@ import { ArrowLeft, Check, Star, UtensilsCrossed, X } from 'lucide-react';
 import { Component, useEffect, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { BRAND } from './brand';
-import { cardStyle, money, STATUS_LABEL, type Loyalty, type Status } from './lib';
+import { cardStyle, inkOn, money, STATUS_LABEL, type Loyalty, type Status } from './lib';
 
 export function Logo({ size = 'md' }: { size?: 'md' | 'lg' | 'xl' }) {
   return (
@@ -279,19 +279,29 @@ export function HeroArt({ className = '' }: { className?: string }) {
   );
 }
 
+type ShopLook = { name: string; emoji: string; color?: string; color_2?: string; logo?: string | null };
+
+/** Logo del local; si no tiene, su ícono sobre su color de marca (o el gris de la app si no eligió color). */
+export function ShopLogo({ shop, large }: { shop: ShopLook; large?: boolean }) {
+  const brand = shop.color && /^#[0-9a-f]{6}$/i.test(shop.color) ? shop.color : null;
+  return (
+    <span
+      className={`tile ${large ? 'tile-lg' : ''} ${shop.logo ? 'tile-logo' : ''}`}
+      style={!shop.logo && brand ? { background: brand, color: inkOn(brand) } : undefined}
+      aria-hidden
+    >
+      {shop.logo ? <img src={shop.logo} alt="" loading="lazy" decoding="async" /> : shop.emoji}
+    </span>
+  );
+}
+
 /** Tarjeta de sellos de un local, pintada con los colores del local. */
-export function StampCard({
-  shop,
-  card,
-}: {
-  shop: { name: string; emoji: string; color?: string; color_2?: string };
-  card: Loyalty;
-}) {
+export function StampCard({ shop, card }: { shop: ShopLook; card: Loyalty }) {
   return (
     <section className="loyalty" style={cardStyle(shop.color, shop.color_2)} aria-label={`Tarjeta de sellos de ${shop.name}`}>
       <div className="loyalty-top">
-        <span className="loyalty-emoji" aria-hidden>
-          {shop.emoji}
+        <span className={`loyalty-emoji ${shop.logo ? 'has-logo' : ''}`} aria-hidden>
+          {shop.logo ? <img src={shop.logo} alt="" /> : shop.emoji}
         </span>
         <span className="loyalty-shop">{shop.name}</span>
         <span className="loyalty-tag">Tarjeta de sellos</span>

@@ -540,6 +540,7 @@ mark,
 .btn:active:not(:disabled) {
   transform: translateY(1px) scale(0.99);
 }
+.btn.disabled,
 .btn:disabled {
   opacity: 0.45;
 }
@@ -1182,6 +1183,19 @@ label small {
   font-size: 1.65rem;
   line-height: 1;
   color: var(--ink-2);
+}
+/* Logo del local: sobre blanco, completo y con aire, sea cuadrado o alargado. */
+.tile-logo {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow: hidden;
+  padding: 6px;
+}
+.tile-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 .tile-lg {
   width: 68px;
@@ -3361,6 +3375,22 @@ th.num {
   border: 2px solid var(--outline);
   font-weight: 800;
 }
+.logo-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.logo-field .grow {
+  display: grid;
+  gap: 2px;
+  min-width: 140px;
+}
+.card-colors h3 {
+  margin-top: 6px;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+}
 .color-field span {
   display: flex;
   align-items: center;
@@ -3412,6 +3442,17 @@ th.num {
   background: var(--card-stamp);
   font-size: 1.1rem;
   flex: none;
+}
+.loyalty-emoji.has-logo {
+  width: 38px;
+  height: 38px;
+  background: #fff;
+  padding: 3px;
+}
+.loyalty-emoji img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 .loyalty-shop {
   font-family: var(--font-italic);

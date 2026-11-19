@@ -38,7 +38,7 @@ Lo que la distingue:
 - Seguimiento en vivo y aviso cuando el pedido está listo, también con la app cerrada.
 - Código de retiro con QR, historial, «pedir lo de siempre» y calificación del local.
 - Promociones de ToruGo por hora de retiro, tarjeta de sellos con premio y favoritos.
-- Cada tarjeta de sellos lleva los colores del local, que el propio local elige en sus ajustes.
+- Cada local muestra su logo en la lista y en su tarjeta de sellos, pintada con sus colores; el local los sube y elige en sus ajustes.
 - Perfil con cambio de sede, apariencia clara u oscura, ayuda, descarga de datos y eliminación de cuenta.
 
 **Locales**

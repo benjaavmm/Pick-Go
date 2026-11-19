@@ -64,7 +64,7 @@ import {
 } from '../lib';
 import { BRAND } from '../brand';
 import { useApp, useLoad, useOrderEvents, useTick } from '../state';
-import { Empty, ErrorBox, Loading, Logo, ProductTile, Rating, Sheet, StampCard, StarsInput, StatusPill, TopBar } from '../ui';
+import { Empty, ErrorBox, Loading, Logo, ProductTile, Rating, Sheet, ShopLogo, StampCard, StarsInput, StatusPill, TopBar } from '../ui';
 import { AccountSettings } from './account';
 import { CampusSelect } from './auth';
 
@@ -404,9 +404,7 @@ export function Home() {
           return (
             <li key={s.id}>
               <Link to={`/local/${s.id}`} className="card shop-card">
-                <span className="tile" aria-hidden>
-                  {s.emoji}
-                </span>
+                <ShopLogo shop={s} />
                 <span className="grow">
                   <strong>{s.name}</strong>
                   <span className="muted clamp">{s.description}</span>
@@ -554,9 +552,7 @@ export function ShopPage() {
     <main className="page has-cartbar">
       <TopBar title={shop.name} back="/" />
       <section className="shop-head">
-        <span className="tile tile-lg" aria-hidden>
-          {shop.emoji}
-        </span>
+        <ShopLogo shop={shop} large />
         <div className="grow">
           <p>{shop.description}</p>
           <p className="meta">

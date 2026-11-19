@@ -779,7 +779,7 @@ test('cada local elige los colores de su tarjeta de sellos', async () => {
   const shopUser = await login('copec@torugo.cl');
   const student = await login('estudiante@torugo.cl');
   const shop = db.prepare("SELECT * FROM shops WHERE name = 'Pronto Copec'").get();
-  assert.deepEqual([shop.color, shop.color_2], ['#d71920', '#0b3b8c']);
+  assert.deepEqual([shop.color, shop.color_2], ['#d1111c', '#3eb100']);
   for (const color of ['rojo', '#fff', '#12345g', 'url(x)']) assert.equal((await shopUser('PATCH', '/api/shop/me', { color })).status, 400, color);
   let r = await shopUser('PATCH', '/api/shop/me', { color: '#00A859', color_2: ' #FFD100 ' });
   assert.equal(r.status, 200);
@@ -788,4 +788,26 @@ test('cada local elige los colores de su tarjeta de sellos', async () => {
   // Vacío vuelve a los colores de la app.
   r = await shopUser('PATCH', '/api/shop/me', { color: '', color_2: '' });
   assert.deepEqual([r.body.color, r.body.color_2], ['', '']);
+});
+
+test('cada local puede poner su logo, solo con imágenes propias', async () => {
+  const shopUser = await login('copec@torugo.cl');
+  const shop = db.prepare("SELECT * FROM shops WHERE name = 'Pronto Copec'").get();
+  // La demo trae el logo de Pronto.
+  assert.ok(shop.logo_id);
+  const student = await login('estudiante@torugo.cl');
+  const listed = (await student('GET', `/api/campuses/${shop.campus_id}/shops`)).body;
+  const logoUrl = listed.find((s) => s.id === shop.id).logo;
+  assert.equal(logoUrl, `/api/images/${shop.logo_id}`);
+
+  const img = (shopId) =>
+    db.prepare("INSERT INTO images (shop_id, mime, data, created_at) VALUES (?, 'image/png', ?, ?)").run(shopId, Buffer.from([1]), clock.toISOString()).lastInsertRowid;
+  const mine = img(shop.id);
+  const other = img(db.prepare("SELECT id FROM shops WHERE name = 'Casino'").get().id);
+  assert.equal((await shopUser('PATCH', '/api/shop/me', { logoId: other })).status, 400);
+  let r = await shopUser('PATCH', '/api/shop/me', { logoId: mine });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.logo, `/api/images/${mine}`);
+  r = await shopUser('PATCH', '/api/shop/me', { logoId: null });
+  assert.equal(r.body.logo, null);
 });
